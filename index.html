@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>SPACE X — Arcade incrémentale</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#05060f" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Space X" />
+  <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="hurt"></div>
+
+  <!-- ===== Interface de vol ===== -->
+  <div id="hud" hidden>
+    <div class="hud-left">
+      <div class="bar-line"><span class="bar-tag">COQUE</span><div class="bar hull"><i id="hullFill"></i></div><span id="hullText" class="bar-num"></span></div>
+      <div class="bar-line" id="shieldLine" hidden><span class="bar-tag">BOUCL.</span><div class="bar shield"><i id="shieldFill"></i></div><span id="shieldText" class="bar-num"></span></div>
+      <div class="sector-line">
+        <span id="sectorText"></span>
+        <div class="bar progress"><i id="progFill"></i></div>
+      </div>
+      <div id="runStats"></div>
+    </div>
+    <div class="hud-right">
+      <div class="wallet-row">
+        <span class="chip units"><b>U</b> <span id="hudUnits">0</span></span>
+        <span class="chip cores"><b>◆</b> <span id="hudCores">0</span></span>
+      </div>
+      <div class="hud-buttons">
+        <button id="btnHudTree" class="btn small">ARBRE <span id="hudAfford" class="badge" hidden></span></button>
+        <button id="btnHudPause" class="btn small" aria-label="Pause">II</button>
+      </div>
+    </div>
+    <div id="hudBoss" hidden>
+      <div id="bossName"></div>
+      <div class="bar boss"><i id="bossFill"></i></div>
+    </div>
+    <div id="hudBottom">
+      <span id="comboText"></span>
+      <span id="frenzyText"></span>
+    </div>
+  </div>
+  <button id="dashBtn" hidden>SAUT</button>
+
+  <div id="banner"><div id="bannerTitle"></div><div id="bannerSub"></div></div>
+  <div id="toasts"></div>
+  <div id="help" hidden></div>
+
+  <!-- ===== Écran titre ===== -->
+  <section id="title" class="screen">
+    <div class="title-box">
+      <canvas id="titleShip" width="150" height="150"></canvas>
+      <h1 class="logo">SPACE&nbsp;<span>X</span></h1>
+      <p class="tagline">Ils arrivent de partout. Chaque épave te rend plus fort.</p>
+      <div class="menu">
+        <button id="btnPlay" class="btn primary">DECOLLER</button>
+        <button id="btnTitleTree" class="btn">ARBRE DE COMPETENCES</button>
+        <button id="btnTitleOptions" class="btn">OPTIONS</button>
+      </div>
+      <p id="titleStats" class="muted"></p>
+      <p class="muted controls">ZQSD / Flèches : piloter &nbsp;·&nbsp; Le tir est automatique &nbsp;·&nbsp; Tab : arbre &nbsp;·&nbsp; Échap : pause</p>
+    </div>
+  </section>
+
+  <!-- ===== Pause ===== -->
+  <section id="pause" class="screen dim" hidden>
+    <div class="panel-box">
+      <h2>PAUSE</h2>
+      <div class="menu">
+        <button id="btnResume" class="btn primary">REPRENDRE</button>
+        <button id="btnPauseTree" class="btn">ARBRE DE COMPETENCES</button>
+        <button id="btnPauseOptions" class="btn">OPTIONS</button>
+        <button id="btnAbandon" class="btn danger">RENTRER AU HANGAR</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Bilan ===== -->
+  <section id="over" class="screen dim" hidden>
+    <div class="panel-box wide">
+      <h2 id="overTitle" class="red">VAISSEAU DETRUIT</h2>
+      <div id="overStats" class="stat-grid"></div>
+      <p id="overHint" class="hint"></p>
+      <div class="menu row">
+        <button id="btnOverTree" class="btn">ARBRE</button>
+        <button id="btnOverPlay" class="btn primary">REDECOLLER</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Options ===== -->
+  <section id="options" class="screen dim" hidden>
+    <div class="panel-box">
+      <h2>OPTIONS</h2>
+      <div id="optionsList" class="options"></div>
+      <div class="menu">
+        <button id="btnOptionsBack" class="btn primary">RETOUR</button>
+        <button id="btnWipe" class="btn danger">EFFACER LA SAUVEGARDE</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Hangar : arbre de compétences ===== -->
+  <section id="hangar" class="screen" hidden>
+    <canvas id="treeCanvas"></canvas>
+    <header class="topbar">
+      <div class="top-group">
+        <button id="btnTreeBack" class="btn small">←</button>
+        <div class="tabs" role="tablist">
+          <button id="tabShip" class="tab active" role="tab">ARBRE</button>
+          <button id="tabCons" class="tab" role="tab">CONSTELLATION</button>
+        </div>
+      </div>
+      <div class="top-group wallet-row">
+        <span class="chip units" title="Unités : gagnées en détruisant des ennemis"><b>U</b> <span id="treeUnits">0</span></span>
+        <span class="chip cores" title="Noyaux : donnés par les boss et les élites"><b>◆</b> <span id="treeCores">0</span></span>
+        <span class="chip dark" id="dmChip" title="Matière noire : gagnée à l'hypersaut"><b>✦</b> <span id="treeDm">0</span></span>
+        <span class="chip income" id="incomeChip" hidden></span>
+      </div>
+      <div class="top-group">
+        <label id="autoBuyWrap" class="toggle" hidden><input type="checkbox" id="autoBuyBox" /> AUTO-ACHAT</label>
+        <div id="sectorPick" class="sector-pick" hidden>
+          <button id="secMinus" class="btn small" aria-label="Secteur précédent">◀</button>
+          <span id="secValue"></span>
+          <button id="secPlus" class="btn small" aria-label="Secteur suivant">▶</button>
+        </div>
+        <button id="btnTreePlay" class="btn primary small">DECOLLER</button>
+      </div>
+    </header>
+    <aside id="nodePanel"></aside>
+    <div class="tree-tools">
+      <button id="btnZoomIn" class="btn small" aria-label="Zoomer">+</button>
+      <button id="btnZoomOut" class="btn small" aria-label="Dézoomer">−</button>
+      <button id="btnCenter" class="btn small">CENTRER</button>
+    </div>
+    <div id="treeHint" class="muted"></div>
+  </section>
+
+  <!-- ===== Confirmation ===== -->
+  <section id="dialog" class="screen dim" hidden>
+    <div class="panel-box">
+      <h2 id="dialogTitle"></h2>
+      <p id="dialogText"></p>
+      <div class="menu row">
+        <button id="dialogNo" class="btn">ANNULER</button>
+        <button id="dialogYes" class="btn danger">CONFIRMER</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="crt"></div>
+
+  <script src="js/tree-data.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
