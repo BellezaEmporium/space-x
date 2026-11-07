@@ -232,10 +232,50 @@ function incomePerSec() {
   return STATS.income * Math.pow(1.22, Math.max(0, S.best - 1));
 }
 
-function maxStartSector() {
+/* ---------- Secteur de départ ---------- */
+const CHECKPOINT_EVERY = 5; // un point de passage tous les 5 secteurs atteints
+
+/* Dernier secteur que le portail de saut permet de choisir librement. */
+function portalMaxSector() {
   let start = 1;
   if (STATS.portal) start = Math.max(1, Math.floor(S.best * STATS.portalMul));
   return Math.min(Math.max(1, S.best), start + STATS.gStart);
+}
+
+/* Départs possibles : le secteur 1, chaque point de passage atteint (5, 10, 15…),
+   et tout ce que le portail ouvre. Le record repart à 1 après un hypersaut. */
+function startOptions() {
+  const options = new Set([1]);
+  for (let s = CHECKPOINT_EVERY; s <= S.best; s += CHECKPOINT_EVERY) options.add(s);
+  for (let s = 2; s <= portalMaxSector(); s++) options.add(s);
+  return [...options].sort((a, b) => a - b);
+}
+function maxStartSector() {
+  const options = startOptions();
+  return options[options.length - 1];
+}
+/* Le départ choisi, ramené au plus proche départ autorisé en dessous. */
+function validStartSector() {
+  const options = startOptions();
+  let best = 1;
+  for (const s of options) if (s <= S.startSector) best = s;
+  S.startSector = best;
+  return best;
+}
+function stepStartSector(direction) {
+  const options = startOptions();
+  const i = options.indexOf(validStartSector());
+  S.startSector = options[clamp(i + direction, 0, options.length - 1)];
+}
+
+/* Nouveau record : un point de passage atteint devient le départ proposé. */
+function noteSectorReached(sector) {
+  if (sector > S.bestEver) S.bestEver = sector;
+  if (sector <= S.best) return false;
+  S.best = sector;
+  if (sector % CHECKPOINT_EVERY !== 0) return false;
+  S.startSector = sector;
+  return true;
 }
 
 /* ---------- Achats ---------- */

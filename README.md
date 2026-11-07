@@ -33,6 +33,7 @@ La liaison est directe entre les deux appareils. Le service gratuit [PeerJS](htt
 
 - **Vol :** chaque secteur dure 60 secondes, puis un boss arrive. Le vaincre ouvre le secteur suivant, plus difficile. À partir du secteur 5, les boss ont 3 fois plus de vie et attaquent 2 fois plus vite. À partir du secteur 10, deux boss arrivent en même temps.
 - **Hangar :** l'arbre ne s'améliore qu'entre deux vols, une fois détruit ou rentré au hangar.
+- **Points de passage :** tous les 5 secteurs atteints (5, 10, 15…), on peut repartir directement de là, depuis le hangar ou l'écran de bilan. Ils repartent de zéro après un hypersaut, avec le record.
 - **Monnaies :** les unités viennent des ennemis, les noyaux des boss et des élites, la matière noire de l'hypersaut.
 - **Arbre :** 226 compétences réparties en 8 branches (Armement, Missiles, Énergie, Drones, Blindage, Propulsion, Collecte, Tactique), avec des synergies entre branches voisines. Les plus lointaines n'ouvrent qu'après 1 ou 2 hypersauts.
 - **Hypersaut :** après le boss du secteur 3, on peut remettre l'arbre à zéro contre de la matière noire. Elle se dépense dans la Constellation, 57 compétences permanentes.

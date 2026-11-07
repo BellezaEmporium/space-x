@@ -26,17 +26,16 @@ const UI = (() => {
     if (name !== 'fly') $('hurt').className = '';
     if (name === 'title') refreshTitle();
     if (name === 'hangar') Tree.open();
-    if (name === 'fly') Audio8.startMusic();
+    Music.setActive(name === 'fly'); // musique seulement en vol, jamais dans les menus
   }
 
   /* ---------- Vol ---------- */
   function launch() {
     Audio8.init();
     Audio8.applySettings();
-    Audio8.setIntensity(0);
     computeStats();
     if (Coop.role === 'guest') return; // c'est l'hôte qui lance le vol
-    const start = clamp(S.startSector, 1, maxStartSector());
+    const start = validStartSector();
     setScreen('fly');
     if (Coop.role === 'host') Coop.startFlight(start);
     else Game.start(start);
@@ -178,7 +177,15 @@ const UI = (() => {
     setScreen('over');
   }
 
+  /* Sur le bilan aussi, on choisit d'où repartir. */
+  function renderOverStart() {
+    const show = startOptions().length > 1 && Coop.role !== 'guest';
+    $('overSectorPick').hidden = !show;
+    if (show) $('overSecValue').textContent = `SECTEUR ${validStartSector()}`;
+  }
+
   function refreshOverButtons() {
+    renderOverStart();
     const guest = Coop.role === 'guest';
     $('btnOverPlay').disabled = guest;
     $('btnOverPlay').textContent = guest ? "ATTENTE DE L'HOTE" : Coop.role === 'host' ? 'REDECOLLER ENSEMBLE' : 'REDECOLLER';
@@ -396,8 +403,11 @@ const UI = (() => {
     on('btnCenter', () => Tree.center());
     on('btnZoomIn', () => Tree.zoomBy(1.25));
     on('btnZoomOut', () => Tree.zoomBy(0.8));
-    on('secMinus', () => { S.startSector = clamp(S.startSector - 1, 1, maxStartSector()); Tree.refreshTop(true); });
-    on('secPlus', () => { S.startSector = clamp(S.startSector + 1, 1, maxStartSector()); Tree.refreshTop(true); });
+    const step = dir => { stepStartSector(dir); Tree.refreshTop(true); renderOverStart(); Save.write(); };
+    on('secMinus', () => step(-1));
+    on('secPlus', () => step(1));
+    on('overSecMinus', () => step(-1));
+    on('overSecPlus', () => step(1));
     $('autoBuyBox').addEventListener('change', e => { S.autoBuy = e.target.checked; Save.write(); });
     const dash = $('dashBtn');
     dash.addEventListener('pointerdown', e => { e.preventDefault(); Game.queueDash(); });
@@ -629,12 +639,10 @@ const Tree = (() => {
     const waitHost = Coop.role === 'guest';
     $('btnTreePlay').disabled = waitHost;
     $('btnTreePlay').textContent = waitHost ? "ATTENTE DE L'HOTE" : 'DECOLLER';
-    const maxS = maxStartSector();
-    const showPick = maxS > 1 && !waitHost;
+    const showPick = startOptions().length > 1 && !waitHost;
     $('sectorPick').hidden = !showPick;
     if (showPick) {
-      S.startSector = clamp(S.startSector, 1, maxS);
-      $('secValue').textContent = `SECTEUR ${S.startSector}`;
+      $('secValue').textContent = `SECTEUR ${validStartSector()}`;
     }
   }
 

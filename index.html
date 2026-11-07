@@ -91,6 +91,12 @@
       <h2 id="overTitle" class="red">VAISSEAU DETRUIT</h2>
       <div id="overStats" class="stat-grid"></div>
       <p id="overHint" class="hint"></p>
+      <div id="overSectorPick" class="sector-pick over-pick" hidden>
+        <span class="muted">Départ :</span>
+        <button id="overSecMinus" class="btn small" aria-label="Secteur de départ précédent">◀</button>
+        <span id="overSecValue"></span>
+        <button id="overSecPlus" class="btn small" aria-label="Secteur de départ suivant">▶</button>
+      </div>
       <div class="menu row">
         <button id="btnOverTree" class="btn">ARBRE</button>
         <button id="btnOverPlay" class="btn primary">REDECOLLER</button>
@@ -167,9 +173,9 @@
       <div class="top-group">
         <label id="autoBuyWrap" class="toggle" hidden><input type="checkbox" id="autoBuyBox" /> AUTO-ACHAT</label>
         <div id="sectorPick" class="sector-pick" hidden>
-          <button id="secMinus" class="btn small" aria-label="Secteur précédent">◀</button>
+          <button id="secMinus" class="btn small" aria-label="Secteur de départ précédent">◀</button>
           <span id="secValue"></span>
-          <button id="secPlus" class="btn small" aria-label="Secteur suivant">▶</button>
+          <button id="secPlus" class="btn small" aria-label="Secteur de départ suivant">▶</button>
         </div>
         <button id="btnTreePlay" class="btn primary small">DECOLLER</button>
       </div>
@@ -201,6 +207,7 @@
   <script src="js/core.js"></script>
   <script src="js/sprites.js"></script>
   <script src="js/audio.js"></script>
+  <script src="js/music.js"></script>
   <script src="js/game.js"></script>
   <script src="js/vendor/peerjs.min.js"></script>
   <script src="js/coop.js"></script>

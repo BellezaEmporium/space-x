@@ -7,10 +7,6 @@ const Audio8 = (() => {
   let musicBus = null;
   let noiseBuf = null;
   const last = {};
-  let seqTimer = null;
-  let step = 0;
-  let nextTime = 0;
-  let intensity = 0;
 
   function init() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
@@ -23,7 +19,7 @@ const Audio8 = (() => {
     sfxBus = ac.createGain();
     sfxBus.connect(master);
     musicBus = ac.createGain();
-    musicBus.gain.value = 0.32;
+    musicBus.gain.value = 0.4;
     musicBus.connect(master);
     noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -34,8 +30,18 @@ const Audio8 = (() => {
   function applySettings() {
     if (!ac) return;
     sfxBus.gain.value = S.set.sound ? 1 : 0;
-    musicBus.gain.value = S.set.music ? 0.32 : 0;
+    musicBus.gain.value = S.set.music ? 0.4 : 0;
+    Music.refresh();
   }
+
+  /* Jeu en arrière-plan ou fermé : plus aucun son. */
+  function silenceInBackground() {
+    if (!ac) return;
+    if (document.hidden) ac.suspend();
+    else ac.resume();
+  }
+  document.addEventListener('visibilitychange', silenceInBackground);
+  window.addEventListener('pagehide', () => { if (ac) ac.suspend(); });
 
   function tone(freq, dur, type, vol, slide, bus, when) {
     if (!ac) return;
@@ -114,45 +120,5 @@ const Audio8 = (() => {
     },
   };
 
-  /* ---------- Musique : boucle d'arpèges en la mineur, composée ici ---------- */
-  const ROOTS = [110, 87.31, 130.81, 98];                  // la, fa, do, sol
-  const ARP = [0, 12, 7, 12, 3, 12, 7, 15];                // base mineure
-  const LEAD = [0, 0, 7, 0, 10, 0, 7, 3, 0, 12, 0, 10, 7, 0, 3, 5];
-
-  function scheduleStep(t) {
-    const bar = Math.floor(step / 16) % ROOTS.length;
-    const root = ROOTS[bar];
-    const s16 = step % 16;
-    const semis = n => Math.pow(2, n / 12);
-
-    if (s16 % 2 === 0) tone(root / 2, 0.16, 'triangle', 0.5, null, musicBus, t);
-    if (s16 % 8 === 0) noise(0.12, 0.4, 180, t, musicBus);
-    if (s16 % 8 === 4) noise(0.08, 0.2, 2500, t, musicBus);
-    tone(root * 2 * semis(ARP[step % 8]), 0.09, 'square', 0.1, null, musicBus, t);
-
-    if (intensity > 0.3 && LEAD[s16]) {
-      tone(root * 4 * semis(LEAD[s16]), 0.11, 'sawtooth', 0.06, null, musicBus, t);
-    }
-    step++;
-  }
-
-  function startMusic() {
-    if (!ac || seqTimer) return;
-    nextTime = ac.currentTime + 0.05;
-    seqTimer = setInterval(() => {
-      if (!ac || ac.state !== 'running') return;
-      const bpmStep = 60 / (118 + intensity * 26) / 4;
-      while (nextTime < ac.currentTime + 0.15) {
-        if (S.set.music) scheduleStep(nextTime);
-        nextTime += bpmStep;
-      }
-    }, 40);
-  }
-  function stopMusic() {
-    clearInterval(seqTimer);
-    seqTimer = null;
-  }
-  function setIntensity(v) { intensity = v; }
-
-  return { init, fx, startMusic, stopMusic, setIntensity, applySettings };
+  return { init, fx, applySettings, context: () => ac, musicOut: () => musicBus };
 })();

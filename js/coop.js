@@ -11,7 +11,7 @@
    PeerJS ne sert qu'à se trouver grâce au code de partie.
    ===================================================================== */
 const Coop = (() => {
-  const PROTOCOL = 2;
+  const PROTOCOL = 3;
   const PREFIX = 'spacex-coop-v1-';
   const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const CODE_LENGTH = 4;
@@ -261,10 +261,12 @@ const Coop = (() => {
       case 'k': n.addShake(ev[1]); break;
       case 'T': UI.toast(String(ev[1])); break;
       case 'B': UI.banner(String(ev[1]), String(ev[2]), !!ev[3]); break;
-      case 'i': Audio8.setIntensity(+ev[1] || 0); break;
+      case 'm':
+        if (ev[1] === 'stop') Music.stop();
+        else if (ev[1] === 'flight' || ev[1] === 'boss') Music[ev[1]](+ev[2] || 1);
+        break;
       case 'S':
-        if (ev[1] > S.best) S.best = ev[1];
-        if (ev[1] > S.bestEver) S.bestEver = ev[1];
+        noteSectorReached(+ev[1] || 1);
         Save.write();
         break;
       case 'd': {

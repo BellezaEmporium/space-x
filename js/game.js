@@ -77,7 +77,11 @@ const Game = (() => {
   }
   function sayToast(text) { UI.toast(text); if (mode === 'host') Coop.queue(['T', text]); }
   function sayBanner(a, b, c) { UI.banner(a, b, c); if (mode === 'host') Coop.queue(['B', a, b || '', !!c]); }
-  function sayIntensity(v) { Audio8.setIntensity(v); if (mode === 'host') Coop.queue(['i', v]); }
+  /* Change de morceau ici et chez l'invité. */
+  function sayMusic(kind, sector) {
+    if (kind === 'stop') Music.stop(); else Music[kind](sector);
+    if (mode === 'host') Coop.queue(['m', kind, sector || 1]);
+  }
 
   const stars = [[], [], []];
   const nebulae = [];
@@ -265,6 +269,7 @@ const Game = (() => {
     };
     if (S.best < sector) S.best = sector;
     S.runs++;
+    sayMusic('flight', sector);
     sayBanner('SECTEUR ' + sector, mate ? 'Tous les ennemis convergent vers vous' : 'Tous les ennemis convergent vers toi');
   }
 
@@ -285,6 +290,7 @@ const Game = (() => {
     };
     if (S.best < msg.sector) S.best = msg.sector;
     S.runs++;
+    Music.flight(msg.sector);
     UI.banner('SECTEUR ' + msg.sector, 'Tous les ennemis convergent vers vous');
   }
 
@@ -457,7 +463,7 @@ const Game = (() => {
       enemies.push(boss);
     }
     sfx('alarm');
-    sayIntensity(1);
+    sayMusic('boss', s);
     sayBanner('ALERTE', bosses.map(b => b.def.name).join(' et ') + ' — secteur ' + s, true);
     shake = Math.max(shake, 5);
   }
@@ -810,14 +816,13 @@ const Game = (() => {
       return;
     }
     sfx('sector');
-    sayIntensity(0);
 
     // Secteur suivant
     run.sector++;
     run.t = 0;
     run.dur = st.sectorDur;
-    if (run.sector > S.best) S.best = run.sector;
-    if (run.sector > S.bestEver) S.bestEver = run.sector;
+    sayMusic('flight', run.sector);
+    if (noteSectorReached(run.sector)) sayToast(`POINT DE PASSAGE : secteur ${run.sector}`);
     if (mode === 'host') Coop.queue(['S', run.sector]);
     for (const s of players) {
       if (s.dead) reviveShip(s, 0.5); // le coéquipier tombé revient au secteur suivant
@@ -1418,7 +1423,7 @@ const Game = (() => {
     if (players.every(s => s.dead)) {
       run.over = true;
       run.deathT = 1.6;
-      sayIntensity(0);
+      sayMusic('stop');
     } else {
       sayToast('Vaisseau à terre : rejoignez-le pour le réparer !');
     }
@@ -2097,6 +2102,7 @@ const Game = (() => {
 
   function queueDash() { Input.dashQueued = true; }
   function clearAll() {
+    Music.stop();
     p = null; me = null; run = null; bosses = []; players = []; mode = 'solo'; droneList = [];
     enemies = []; pBullets = []; eBullets = []; missiles = []; mines = []; orbs = [];
     parts = []; rings = []; novas = []; bolts = []; texts = [];
