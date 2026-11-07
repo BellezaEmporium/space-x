@@ -1,4 +1,4 @@
-const CACHE_NAME = 'space-x-v1';
+const CACHE_NAME = 'space-x-v2';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -14,6 +14,8 @@ const PRECACHE_URLS = [
   './js/sprites.js',
   './js/audio.js',
   './js/game.js',
+  './js/vendor/peerjs.min.js',
+  './js/coop.js',
   './js/ui.js',
 ];
 

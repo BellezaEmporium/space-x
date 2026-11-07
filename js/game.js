@@ -33,11 +33,46 @@ const Game = (() => {
   let p = null;
   let run = null;
   let enemies = [], pBullets = [], eBullets = [], missiles = [], mines = [], orbs = [];
-  let parts = [], rings = [], novas = [], bolts = [], patches = [], texts = [], droneList = [];
+  let parts = [], rings = [], novas = [], bolts = [], texts = [], droneList = [];
   let boss = null;
   let time = 0, shake = 0, frameT = 0, accumulator = 0;
   let camX = 0, camY = 0;
-  let beamHit = null;
+
+  /* Plusieurs vaisseaux peuvent voler ensemble. p, ST et droneList désignent toujours
+     celui qui agit à cet instant : le reste du moteur n'a pas à savoir lequel c'est. */
+  let players = [];
+  let me = null;          // le vaisseau de ce joueur (celui que suit la caméra)
+  let ST = null;
+  let mode = 'solo';      // solo | host | guest
+  let viewW = 640, viewH = 360;
+  let nextNid = 1;
+
+  function setActor(ship) { p = ship; ST = ship.st; droneList = ship.drones; }
+  const ownerOf = o => players[o] || me;
+  function nearestAlive(x, y) {
+    let best = null, bd = Infinity;
+    for (const s of players) {
+      if (s.dead) continue;
+      const d = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y);
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best || players[0];
+  }
+  function randomAlive() {
+    const list = players.filter(s => !s.dead);
+    return list.length ? pick(list) : players[0];
+  }
+  const inCoop = () => players.length > 1;
+
+  /* Ce que l'hôte fait voir et entendre à l'invité. */
+  const NOT_FORWARDED = new Set(['shoot', 'hit', 'hurt', 'shieldHit', 'dash', 'buy', 'deny', 'click']);
+  function sfx(name) {
+    Audio8.fx[name]();
+    if (mode === 'host' && !NOT_FORWARDED.has(name)) Coop.queue(['s', name]);
+  }
+  function sayToast(text) { UI.toast(text); if (mode === 'host') Coop.queue(['T', text]); }
+  function sayBanner(a, b, c) { UI.banner(a, b, c); if (mode === 'host') Coop.queue(['B', a, b || '', !!c]); }
+  function sayIntensity(v) { Audio8.setIntensity(v); if (mode === 'host') Coop.queue(['i', v]); }
 
   const stars = [[], [], []];
   const nebulae = [];
@@ -139,6 +174,7 @@ const Game = (() => {
     cv.width = VW;
     cv.height = VH;
     ctx.imageSmoothingEnabled = false;
+    if (typeof Coop !== 'undefined') { updateView(); Coop.sendView(); }
   }
 
   /* Nébuleuses pré-calculées, tramées à l'ancienne et raccordables. */
@@ -177,37 +213,78 @@ const Game = (() => {
     }
   }
 
-  function start(sector) {
-    computeStats();
-    const st = STATS;
-    p = {
-      x: 0, y: 0, vx: 0, vy: 0, ang: -Math.PI / 2, aim: -Math.PI / 2,
+  function makeShip(st, idx, remote) {
+    return {
+      idx, remote, st, drones: [], patches: [], beam: null,
+      x: idx * 34, y: 0, vx: 0, vy: 0, ang: -Math.PI / 2, aim: -Math.PI / 2,
       hull: st.maxHull, shield: st.shield ? st.maxHull * st.shieldMul : 0,
       shieldT: 0, invuln: 1, flash: 0,
       fireT: 0, missileT: 1, mineT: 1, arcT: 0.5, novaT: 2, beamT: 0, trailT: 0,
-      dashT: 0, dashCd: 0, charges: st.dashCharges, dashVX: 0, dashVY: 0,
-      revives: st.revive, frenzy: 0, frenzyT: 0, collectT: 0, repairAcc: 0,
-      dead: false, thrust: 0, maxHullSeen: st.maxHull,
+      dashT: 0, dashCd: 0, charges: st.dashCharges, dashVX: 0, dashVY: 0, dashHit: null, netDash: false,
+      revives: st.revive, frenzy: 0, frenzyT: 0, collectT: 0,
+      dead: false, thrust: 0, maxHullSeen: st.maxHull, rescue: 0,
+      netAim: null, fired: false, award: { u: 0, c: 0 },
     };
+  }
+
+  function clearWorld() {
     enemies = []; pBullets = []; eBullets = []; missiles = []; mines = []; orbs = [];
-    parts = []; rings = []; novas = []; bolts = []; patches = []; texts = []; droneList = [];
+    parts = []; rings = []; novas = []; bolts = []; texts = [];
     boss = null;
-    syncDrones();
+    accumulator = 0;
+    shake = 0;
+  }
+
+  function updateView() {
+    const mate = Coop.mate();
+    viewW = Math.max(VW, mate ? mate.vw : 0);
+    viewH = Math.max(VH, mate ? mate.vh : 0);
+  }
+
+  function start(sector) {
+    computeStats();
+    const mate = Coop.mate();
+    mode = mate ? 'host' : 'solo';
+    players = [makeShip(STATS, 0, false)];
+    if (mate) players.push(makeShip(mate.st, 1, true));
+    me = players[0];
+    clearWorld();
+    updateView();
+    for (const s of players) { setActor(s); syncDrones(); }
+    setActor(me);
     run = {
-      sector, startSector: sector, t: 0, time: 0, dur: st.sectorDur,
-      spawnAcc: 0, ringT: 14, cargoT: rnd(18, 28) / st.cargoMul,
+      sector, startSector: sector, t: 0, time: 0, dur: STATS.sectorDur,
+      spawnAcc: 0, ringT: 14, cargoT: rnd(18, 28) / STATS.cargoMul,
       kills: 0, units: 0, cores: 0, bossesKilled: 0,
       combo: 0, comboT: 0, bestCombo: 0, over: false, deathT: 0,
     };
     if (S.best < sector) S.best = sector;
     S.runs++;
-    accumulator = 0;
-    shake = 0;
-    UI.banner(`SECTEUR ${sector}`, 'Tous les ennemis convergent vers toi');
+    sayBanner('SECTEUR ' + sector, mate ? 'Tous les ennemis convergent vers vous' : 'Tous les ennemis convergent vers toi');
+  }
+
+  /* L'invité ne simule que son propre pilotage : tout le reste vient de l'hôte. */
+  function startGuest(msg) {
+    computeStats();
+    mode = 'guest';
+    const host = makeShip(msg.st, 0, true);
+    me = makeShip(STATS, 1, false);
+    players = [host, me];
+    clearWorld();
+    updateView();
+    for (const s of players) { setActor(s); syncDrones(); }
+    setActor(me);
+    run = {
+      sector: msg.sector, startSector: msg.sector, t: 0, time: 0, dur: 60,
+      kills: 0, units: 0, cores: 0, bossesKilled: 0, combo: 0, bestCombo: 0, over: false,
+    };
+    if (S.best < msg.sector) S.best = msg.sector;
+    S.runs++;
+    UI.banner('SECTEUR ' + msg.sector, 'Tous les ennemis convergent vers vous');
   }
 
   function syncDrones() {
-    const n = STATS.drones;
+    const n = ST.drones;
     while (droneList.length < n) {
       droneList.push({ x: p ? p.x : 0, y: p ? p.y : 0, fireT: rnd(1), arcT: rnd(3), ramT: 0, offset: 0 });
     }
@@ -215,15 +292,42 @@ const Game = (() => {
     droneList.forEach((d, i) => { d.offset = (i / Math.max(1, n)) * TAU; });
   }
 
-  /* Rappelé quand un achat change les statistiques pendant un vol. */
-  function onStatsChanged() {
-    if (!p) return;
+  function applyStats(ship, st) {
+    const prevMax = ship.maxHullSeen || st.maxHull;
+    ship.st = st;
+    setActor(ship);
     syncDrones();
     // Une amélioration de coque achetée en vol profite tout de suite : on garde le même pourcentage.
-    const prevMax = p.maxHullSeen || STATS.maxHull;
-    p.hull = Math.min(STATS.maxHull, (p.hull / prevMax) * STATS.maxHull);
-    p.maxHullSeen = STATS.maxHull;
-    if (!STATS.shield) p.shield = 0;
+    if (mode !== 'guest') {
+      ship.hull = Math.min(st.maxHull, (ship.hull / prevMax) * st.maxHull);
+      if (!st.shield) ship.shield = 0;
+    }
+    ship.maxHullSeen = st.maxHull;
+    setActor(me);
+  }
+
+  /* Rappelé quand un achat change les statistiques pendant un vol. */
+  function onStatsChanged() {
+    Coop.sendStats();
+    if (!me) return;
+    applyStats(me, STATS);
+  }
+
+  /* L'autre joueur vient d'améliorer son vaisseau. */
+  function setMateStats(st) {
+    if (!me) return;
+    const mate = players.find(s => s !== me);
+    if (mate) applyStats(mate, st);
+    updateView();
+  }
+
+  /* L'invité est parti : l'hôte continue seul. */
+  function removeMate() {
+    if (mode !== 'host') return;
+    players = [me];
+    mode = 'solo';
+    updateView();
+    setActor(me);
   }
 
   /* ---------- Échelles par secteur ---------- */
@@ -233,7 +337,7 @@ const Game = (() => {
 
   /* ---------- Apparitions ---------- */
   function spawnPos(margin = 24) {
-    const hw = VW / 2 + margin, hh = VH / 2 + margin;
+    const hw = viewW / 2 + margin, hh = viewH / 2 + margin;
     const side = Math.random() < 0.5 ? -1 : 1;
     if (Math.random() < hw / (hw + hh)) return { x: p.x + rnd(-hw, hw), y: p.y + side * hh };
     return { x: p.x + side * hw, y: p.y + rnd(-hh, hh) };
@@ -245,10 +349,10 @@ const Game = (() => {
     const at = pos || spawnPos();
     const s = run.sector;
     const ramp = 1 + 0.25 * clamp(run.t / run.dur, 0, 1.5);
-    const elite = opts.noElite ? false : Math.random() < STATS.eliteC && s >= 2 && typeName !== 'cargo';
-    const hp = t.hp * hpMul(s) * ramp * (elite ? 5 : 1);
+    const elite = opts.noElite ? false : Math.random() < ST.eliteC && s >= 2 && typeName !== 'cargo';
+    const hp = t.hp * hpMul(s) * ramp * (elite ? 5 : 1) * (inCoop() ? 1.25 : 1);
     const e = {
-      type: typeName, t, x: at.x, y: at.y, vx: 0, vy: 0,
+      nid: nextNid++ & 0xffff, type: typeName, t, x: at.x, y: at.y, vx: 0, vy: 0,
       hp, maxHp: hp,
       r: Math.max(3, Math.min(spr.width, spr.height) * 0.42),
       spd: t.spd * Math.min(2.4, 1 + 0.03 * (s - 1)) * rnd(0.92, 1.08),
@@ -281,12 +385,14 @@ const Game = (() => {
   }
 
   function updateSpawns(dt) {
-    const st = STATS, s = run.sector;
+    setActor(randomAlive());
+    const st = ST, s = run.sector;
     const prog = clamp(run.t / run.dur, 0, 1.5);
     let rate = (0.9 + 0.14 * (s - 1)) * (1 + 0.8 * prog) * st.spawnMul;
     // Boss présent : répit au début, puis la pression monte si on traîne.
     if (boss) rate *= Math.min(1.25, 0.4 + 0.01 * Math.max(0, run.t - run.dur));
-    rate = Math.min(rate, 9 * st.spawnMul);
+    if (inCoop()) rate *= 1.5;
+    rate = Math.min(rate, 9 * st.spawnMul * (inCoop() ? 1.5 : 1));
     run.spawnAcc += rate * dt;
     while (run.spawnAcc >= 1) {
       run.spawnAcc -= 1;
@@ -303,7 +409,7 @@ const Game = (() => {
     if (run.ringT <= 0 && enemies.length < 200) {
       run.ringT = Math.max(8, 22 - s * 0.8);
       const n = Math.min(60, 12 + s * 3);
-      const R = Math.hypot(VW, VH) / 2 + 20;
+      const R = Math.hypot(viewW, viewH) / 2 + 20;
       const type = s >= 7 && Math.random() < 0.4 ? 'scout' : 'gnat';
       for (let i = 0; i < n; i++) {
         const a = (i / n) * TAU;
@@ -315,7 +421,7 @@ const Game = (() => {
     if (run.cargoT <= 0) {
       run.cargoT = rnd(26, 40) / st.cargoMul;
       spawnEnemy('cargo');
-      UI.toast('CARGO REPÉRÉ — détruis-le avant qu\'il ne fuie !');
+      sayToast('CARGO REPÉRÉ — détruis-le avant qu\'il ne fuie !');
     }
     // Le boss.
     if (!boss && run.t >= run.dur) spawnBoss();
@@ -326,8 +432,9 @@ const Game = (() => {
     const def = BOSSES[(s - 1) % BOSSES.length];
     const spr = Sprites[def.sprite].n;
     const at = spawnPos(50);
-    const hp = 300 * Math.pow(1.42, s - 1);
+    const hp = 300 * Math.pow(1.42, s - 1) * (inCoop() ? 1.7 : 1);
     boss = {
+      nid: nextNid++ & 0xffff, bossIdx: (s - 1) % BOSSES.length,
       type: 'boss', t: { sprite: def.sprite, ai: def.ai, noRot: true, dmg: 0 }, def,
       x: at.x, y: at.y, vx: 0, vy: 0, hp, maxHp: hp,
       r: Math.min(spr.width, spr.height) * 0.9,
@@ -336,9 +443,9 @@ const Game = (() => {
       slow: 0, slowT: 0, q: 0, dead: false, drawScale: 2, life: 0, tx: 0, ty: 0,
     };
     enemies.push(boss);
-    Audio8.fx.alarm();
-    Audio8.setIntensity(1);
-    UI.banner('ALERTE', `${def.name} — secteur ${s}`, true);
+    sfx('alarm');
+    sayIntensity(1);
+    sayBanner('ALERTE', `${def.name} — secteur ${s}`, true);
     shake = Math.max(shake, 5);
   }
 
@@ -362,14 +469,14 @@ const Game = (() => {
     if (e.boss) {
       const late = Math.max(0, run.t - run.dur - 20);
       e.spd = 34 * Math.min(3, 1 + late * 0.02);
-      if (dist > Math.hypot(VW, VH) * 0.85) {
+      if (dist > Math.hypot(viewW, viewH) * 0.85) {
         const at = spawnPos(20);
         e.x = at.x; e.y = at.y;
       }
     }
 
     let slowF = 1 - e.slow;
-    if (STATS.slowAura > 0 && dist < 110) slowF *= 1 - STATS.slowAura;
+    if (ST.slowAura > 0 && dist < 110) slowF *= 1 - ST.slowAura;
     let spd = e.spd * slowF;
     let tvx = nx * spd, tvy = ny * spd;
 
@@ -426,7 +533,7 @@ const Game = (() => {
         tvx = -nx * spd * (dist < 170 ? 1.15 : 0.7);
         tvy = -ny * spd * (dist < 170 ? 1.15 : 0.7);
         e.timer += dt;
-        if (e.life > 26) { e.dead = true; e.escaped = true; UI.toast('Le cargo a pris la fuite.'); }
+        if (e.life > 26) { e.dead = true; e.escaped = true; sayToast('Le cargo a pris la fuite.'); }
         break;
       }
       case 'spiral': bossSpiral(e, dt, nx, ny, dist); return;
@@ -444,7 +551,7 @@ const Game = (() => {
     if (!e.t.noRot && e.state !== 1 && (e.vx || e.vy)) e.ang = Math.atan2(e.vy, e.vx) + Math.PI / 2;
 
     // Trop loin : on le ramène en bordure d'écran.
-    if (dist > Math.hypot(VW, VH) * 1.15 && e.t.ai !== 'flee') {
+    if (dist > Math.hypot(viewW, viewH) * 1.15 && e.t.ai !== 'flee') {
       const at = spawnPos();
       e.x = at.x; e.y = at.y;
     }
@@ -503,7 +610,7 @@ const Game = (() => {
     } else if (e.state === 1) {     // annonce : la trajectoire s'affiche
       e.cx = nx; e.cy = ny;
       e.vx *= 0.9; e.vy *= 0.9;
-      if (e.timer <= 0) { e.state = 2; e.timer = 0.75; shake = Math.max(shake, 3); Audio8.fx.dash(); }
+      if (e.timer <= 0) { e.state = 2; e.timer = 0.75; shake = Math.max(shake, 3); sfx('dash'); }
     } else if (e.state === 2) {     // charge
       e.x += e.cx * 330 * dt;
       e.y += e.cy * 330 * dt;
@@ -566,14 +673,14 @@ const Game = (() => {
   /* ---------- Dégâts infligés ---------- */
   function damageMultiplier() {
     let m = 1;
-    if (STATS.lastStand && p.hull < STATS.maxHull * 0.25) m *= 1.5;
-    if (STATS.speedDmg > 0) m *= 1 + STATS.speedDmg * (Math.hypot(p.vx, p.vy) / 50);
+    if (ST.lastStand && p.hull < ST.maxHull * 0.25) m *= 1.5;
+    if (ST.speedDmg > 0) m *= 1 + ST.speedDmg * (Math.hypot(p.vx, p.vy) / 50);
     return m;
   }
 
   function dealDamage(e, amount, o = {}) {
     if (e.dead) return;
-    const st = STATS;
+    const st = ST;
     let dmg = amount * damageMultiplier();
     if (e.boss) dmg *= 1 + st.boss + st.elite * 0.5;
     if (e.elite) dmg *= 1 + st.elite;
@@ -584,10 +691,12 @@ const Game = (() => {
     e.flash = 0.07;
     if (o.slow > 0) { e.slow = Math.max(e.slow, o.slow); e.slowT = 1.2; }
     if (S.set.nums && texts.length < 60 && (!o.quiet || crit)) {
-      texts.push({ x: e.x + rnd(-4, 4), y: e.y - e.r, t: 0.55, s: fmt(dmg), c: crit ? 2 : o.color || 0 });
+      const tx = e.x + rnd(-4, 4), ty = e.y - e.r, tc = crit ? 2 : o.color || 0, label = fmt(dmg);
+      texts.push({ x: tx, y: ty, t: 0.55, s: label, c: tc });
+      if (mode === 'host') Coop.queue(['x', Math.round(tx), Math.round(ty), label, tc]);
     }
     if (e.hp <= 0) killEnemy(e);
-    else if (!o.quiet) Audio8.fx.hit();
+    else if (!o.quiet) sfx('hit');
   }
 
   function explosion(x, y, radius, dmg, color, o = {}) {
@@ -600,13 +709,13 @@ const Game = (() => {
     });
     ringAt(x, y, radius, color);
     burst(x, y, Math.min(28, 6 + radius * 0.35), [color, '#ffffff', '#ff9d2e'], radius * 3, 0.35);
-    Audio8.fx.boom();
+    sfx('boom');
     if (radius > 50) shake = Math.max(shake, 2);
   }
 
   function killEnemy(e) {
     e.dead = true;
-    const st = STATS;
+    const st = ST;
     run.kills++;
     S.kills++;
 
@@ -621,19 +730,20 @@ const Game = (() => {
     // Frénésie
     if (st.frenzy) { p.frenzy = Math.min(st.frenzyMax, p.frenzy + 1); p.frenzyT = 2.5; }
     // Récupération
-    if (st.repairKill > 0) p.hull = Math.min(st.maxHull, p.hull + st.maxHull * st.repairKill);
+    if (st.repairKill > 0 && !p.dead) p.hull = Math.min(st.maxHull, p.hull + st.maxHull * st.repairKill);
     // Saut opportuniste
-    if (st.dash && st.dashReset > 0 && p.charges < st.dashCharges && Math.random() < st.dashReset) {
-      p.charges++;
-      p.dashCd = 0;
+    if (st.dash && st.dashReset > 0 && (p.remote || p.charges < st.dashCharges) && Math.random() < st.dashReset) {
+      if (p.remote) Coop.queue(['d']);
+      else { p.charges++; p.dashCd = 0; }
     }
 
     // Récompense
-    let value = e.rew * st.gainMul * (1 + comboBonus);
+    // Le multiplicateur de chaque joueur s'applique au ramassage : tout le monde profite de chaque orbe.
+    let value = e.rew * (1 + comboBonus);
     if (e.elite || e.boss) value *= 1 + st.bounty;
     if (Math.random() < st.jackpot) {
       value *= st.jackpotMul;
-      UI.toast('JACKPOT !');
+      sayToast('JACKPOT !');
       ringAt(e.x, e.y, 34, '#ffd84a');
     }
     const pieces = e.boss ? 24 : e.type === 'cargo' ? 12 : e.elite ? 5 : value > 0 && e.r > 7 ? 3 : 1;
@@ -646,13 +756,13 @@ const Game = (() => {
     const big = e.r > 7;
     burst(e.x, e.y, big ? 26 : 9, e.elite ? ['#ffd84a', '#fff6b0', '#ffffff'] : ['#ffffff', '#ff9d2e', '#ff4a4a'], big ? 110 : 70, big ? 0.55 : 0.32);
     if (big) { ringAt(e.x, e.y, e.r * 2.6, '#ff9d2e'); shake = Math.max(shake, 1.5); }
-    Audio8.fx.kill();
+    sfx('kill');
 
     if (e.boss) onBossKilled(e);
   }
 
   function onBossKilled(e) {
-    const st = STATS;
+    const st = ST;
     boss = null;
     run.bossesKilled++;
     const coreN = Math.max(1, Math.round((1 + Math.floor(run.sector / 2) + st.coreBoss) * st.coreMul));
@@ -666,9 +776,10 @@ const Game = (() => {
     burst(e.x, e.y, 90, ['#ffffff', '#ffe14a', '#ff9d2e', '#ff4a4a'], 240, 1);
     for (let i = 0; i < 3; i++) ringAt(e.x + rnd(-20, 20), e.y + rnd(-20, 20), 70 + i * 40, '#ffe14a');
     shake = Math.max(shake, 8);
-    Audio8.fx.bigKill();
-    Audio8.fx.sector();
-    Audio8.setIntensity(0);
+    if (mode === 'host') Coop.queue(['k', 8]);
+    sfx('bigKill');
+    sfx('sector');
+    sayIntensity(0);
 
     // Secteur suivant
     run.sector++;
@@ -676,10 +787,14 @@ const Game = (() => {
     run.dur = st.sectorDur;
     if (run.sector > S.best) S.best = run.sector;
     if (run.sector > S.bestEver) S.bestEver = run.sector;
-    p.hull = Math.min(st.maxHull, p.hull + st.maxHull * 0.25);
+    if (mode === 'host') Coop.queue(['S', run.sector]);
+    for (const s of players) {
+      if (s.dead) reviveShip(s, 0.5); // le coéquipier tombé revient au secteur suivant
+      else s.hull = Math.min(s.st.maxHull, s.hull + s.st.maxHull * 0.25);
+    }
     eBullets.length = 0;
     const firstHyper = run.sector === HYPER_SECTOR && S.ascensions === 0;
-    UI.banner(`SECTEUR ${run.sector}`, firstHyper ? 'HYPERSAUT DÉBLOQUÉ — voir la Constellation' : `Boss vaincu : +${fmt(coreN)} noyaux`);
+    sayBanner('SECTEUR ' + run.sector, firstHyper ? 'HYPERSAUT DÉBLOQUÉ — voir la Constellation' : 'Boss vaincu : +' + fmt(coreN) + ' noyaux');
     Save.write();
   }
 
@@ -696,45 +811,49 @@ const Game = (() => {
 
   function collectOrb(o) {
     if (o.kind === 'u') {
-      S.units += o.val;
-      S.lifeUnits += o.val;
-      S.ascUnits += o.val;
-      run.units += o.val;
-      Audio8.fx.pickup();
+      const v = o.val * me.st.gainMul;
+      S.units += v;
+      S.lifeUnits += v;
+      S.ascUnits += v;
+      run.units += v;
+      for (const s of players) if (s.remote) s.award.u += o.val * s.st.gainMul;
+      sfx('pickup');
     } else {
-      S.cores += o.val;
-      run.cores += o.val;
-      Audio8.fx.core();
-      UI.toast(`+${fmt(o.val)} NOYAU${o.val >= 2 ? 'X' : ''}`);
+      const v = Math.round(o.val);
+      S.cores += v;
+      run.cores += v;
+      for (const s of players) if (s.remote) s.award.c += v;
+      sfx('core');
+      sayToast('+' + fmt(v) + ' NOYAU' + (v >= 2 ? 'X' : ''));
     }
-    UI.bumpWallet();
   }
 
   function updateOrbs(dt) {
-    const st = STATS;
-    let radius = st.magnet;
-    if (st.droneCollect) {
-      p.collectT -= dt;
-      if (p.collectT <= 0 && orbs.length) {
-        p.collectT = 0.33;
+    for (const s of players) {
+      if (s.dead || !s.st.droneCollect) continue;
+      s.collectT -= dt;
+      if (s.collectT <= 0 && orbs.length) {
+        s.collectT = 0.33;
         const o = orbs[Math.floor(Math.random() * orbs.length)];
         if (!o.pulled) {
           o.pulled = true;
-          bolts.push({ pts: [p.x, p.y, o.x, o.y], t: 0.1, color: '#6cf06c' });
+          addBolt([s.x, s.y, o.x, o.y], 0.1, '#6cf06c');
         }
       }
     }
+    const reach = Math.hypot(viewW, viewH) * 1.3;
     for (let i = orbs.length - 1; i >= 0; i--) {
       const o = orbs[i];
       o.t += dt;
-      const dx = p.x - o.x, dy = p.y - o.y;
+      const ship = nearestAlive(o.x, o.y);
+      const dx = ship.x - o.x, dy = ship.y - o.y;
       const d = Math.hypot(dx, dy) || 1;
-      const onScreen = Math.abs(dx) < VW / 2 + 20 && Math.abs(dy) < VH / 2 + 20;
-      if (o.t > 0.25 && (d < radius || o.pulled || (st.vacuum && onScreen))) {
+      const onScreen = Math.abs(dx) < viewW / 2 + 20 && Math.abs(dy) < viewH / 2 + 20;
+      if (o.t > 0.25 && (d < ship.st.magnet || o.pulled || (ship.st.vacuum && onScreen))) {
         const a = 900;
         o.vx += (dx / d) * a * dt;
         o.vy += (dy / d) * a * dt;
-        const max = Math.max(260, Math.hypot(p.vx, p.vy) * 1.4);
+        const max = Math.max(260, Math.hypot(ship.vx, ship.vy) * 1.4);
         const sp = Math.hypot(o.vx, o.vy);
         if (sp > max) { o.vx *= max / sp; o.vy *= max / sp; }
       } else {
@@ -743,12 +862,12 @@ const Game = (() => {
       }
       o.x += o.vx * dt;
       o.y += o.vy * dt;
-      if (d < 9 && o.t > 0.1) {
+      if (d < 9 && o.t > 0.1 && !ship.dead) {
         collectOrb(o);
         orbs[i] = orbs[orbs.length - 1];
         orbs.pop();
-      } else if (d > Math.hypot(VW, VH) * 1.3) {
-        // Trop loin derrière toi : rapatrié pour ne rien perdre.
+      } else if (d > reach) {
+        // Trop loin derrière vous : rapatrié pour ne rien perdre.
         o.pulled = true;
       }
     }
@@ -760,17 +879,23 @@ const Game = (() => {
       const a = rnd(TAU), s = rnd(speed * 0.2, speed);
       parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: rnd(life * 0.5, life), c: pick(colors), z: Math.random() < 0.25 ? 2 : 1 });
     }
+    if (mode === 'host') Coop.queue(['b', Math.round(x), Math.round(y), Math.round(n), colors, speed, life]);
   }
   function spark(x, y, c) {
     if (parts.length < 700) parts.push({ x, y, vx: rnd(-20, 20), vy: rnd(-20, 20), t: rnd(0.15, 0.3), c, z: 1 });
   }
   function ringAt(x, y, r, c) {
     if (rings.length < 40) rings.push({ x, y, r: r * 0.2, max: r, c, t: 0 });
+    if (mode === 'host') Coop.queue(['r', Math.round(x), Math.round(y), Math.round(r), c]);
+  }
+  function addBolt(pts, t, color) {
+    bolts.push({ pts, t, color });
+    if (mode === 'host') Coop.queue(['l', pts.map(Math.round), t, color]);
   }
 
   /* ---------- Armes du joueur ---------- */
   function fireCannon(target) {
-    const st = STATS;
+    const st = ST;
     const dmg = st.cannonDmg;
     const base = p.aim;
     const n = st.salvo;
@@ -785,14 +910,14 @@ const Game = (() => {
       addBullet(p.x, p.y, base + 1.05, sp, dmg * 0.6, null);
       addBullet(p.x, p.y, base - 1.05, sp, dmg * 0.6, null);
     }
-    Audio8.fx.shoot();
+    if (p === me) sfx('shoot'); else p.fired = true;
     if (parts.length < 700) spark(p.x + Math.cos(base) * 9, p.y + Math.sin(base) * 9, '#ffffff');
   }
   function addBullet(x, y, a, sp, dmg, target, o = {}) {
     if (pBullets.length > 500) return;
-    const st = STATS;
+    const st = ST;
     pBullets.push({
-      x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, sp,
+      o: p.idx, x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, sp,
       dmg, life: (o.range || st.range) / sp,
       pierce: o.pierce === undefined ? st.pierce : o.pierce,
       bounce: o.bounce === undefined ? st.ricochet : o.bounce,
@@ -802,7 +927,7 @@ const Game = (() => {
   }
 
   function launchMissiles() {
-    const st = STATS;
+    const st = ST;
     const count = st.missileN + (st.droneMissile ? droneList.length : 0);
     const nearbyCount = Math.min(enemies.length, 30);
     if (!nearbyCount) return false;
@@ -812,18 +937,19 @@ const Game = (() => {
       const src = i >= st.missileN && droneList[i - st.missileN] ? droneList[i - st.missileN] : p;
       missiles.push({
         x: src.x, y: src.y, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60,
-        ang: a, target: boss && !boss.dead && i % 2 === 0 ? boss : null, life: 3.2, trail: 0,
+        o: p.idx, ang: a, target: boss && !boss.dead && i % 2 === 0 ? boss : null, life: 3.2, trail: 0,
       });
       launched++;
     }
-    if (launched) Audio8.fx.missile();
+    if (launched) sfx('missile');
     return launched > 0;
   }
 
   function updateMissiles(dt) {
-    const st = STATS;
     for (let i = missiles.length - 1; i >= 0; i--) {
       const m = missiles[i];
+      setActor(ownerOf(m.o));
+      const st = ST;
       m.life -= dt;
       if (!m.target || m.target.dead) m.target = nearest(m.x, m.y, 320);
       if (m.target) {
@@ -851,7 +977,7 @@ const Game = (() => {
     }
   }
   function detonateMissile(m) {
-    const st = STATS;
+    const st = ST;
     let dmg = st.missileDmg;
     let rad = st.missileRad;
     let color = '#ff9d2e';
@@ -870,7 +996,7 @@ const Game = (() => {
   }
 
   function fireArcFrom(x, y, chain, dmg) {
-    const st = STATS;
+    const st = ST;
     const seen = new Set();
     let cx = x, cy = y;
     const pts = [cx, cy];
@@ -885,21 +1011,21 @@ const Game = (() => {
       hits++;
     }
     if (hits) {
-      bolts.push({ pts, t: 0.14, color: '#7ff0ff' });
-      Audio8.fx.arc();
+      addBolt(pts, 0.14, '#7ff0ff');
+      sfx('arc');
     }
     return hits > 0;
   }
 
   function fireBeam(dt) {
-    const st = STATS;
+    const st = ST;
     p.beamT -= dt;
     const target = nearest(p.x, p.y, st.beamLen + 10);
-    beamHit = null;
+    p.beam = null;
     if (!target) return;
     const a = p.aim;
     const ca = Math.cos(a), sa = Math.sin(a);
-    beamHit = { a, len: st.beamLen, w: st.beamW };
+    p.beam = { a, len: st.beamLen, w: st.beamW };
     if (p.beamT > 0) return;
     p.beamT = 0.1;
     const half = st.beamW / 2;
@@ -916,17 +1042,18 @@ const Game = (() => {
   }
 
   function dropMines() {
-    const st = STATS;
+    const st = ST;
     for (let i = 0; i < st.mineN; i++) {
       if (mines.length >= 40) mines.shift();
       const a = rnd(TAU), d = st.mineN > 1 ? rnd(4, 22) : 0;
-      mines.push({ x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d, life: 22, arm: 0.4 });
+      mines.push({ o: p.idx, x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d, life: 22, arm: 0.4 });
     }
   }
   function updateMines(dt) {
-    const st = STATS;
     for (let i = mines.length - 1; i >= 0; i--) {
       const m = mines[i];
+      setActor(ownerOf(m.o));
+      const st = ST;
       m.life -= dt;
       m.arm -= dt;
       let trigger = m.life <= 0;
@@ -942,6 +1069,7 @@ const Game = (() => {
   function updateNovas(dt) {
     for (let i = novas.length - 1; i >= 0; i--) {
       const n = novas[i];
+      setActor(ownerOf(n.o));
       n.r += n.speed * dt;
       for (const e of enemies) {
         if (e.dead || n.hit.has(e)) continue;
@@ -959,12 +1087,11 @@ const Game = (() => {
     }
   }
   function addNova(x, y, radius, dmg, knock, color) {
-    novas.push({ x, y, r: 4, max: radius, dmg, knock, speed: radius * 3, hit: new Set(), color: color || '#7ff0ff' });
-    Audio8.fx.nova();
+    novas.push({ o: p.idx, x, y, r: 4, max: radius, dmg, knock, speed: radius * 3, hit: new Set(), color: color || '#7ff0ff' });
+    sfx('nova');
   }
 
-  function updateDrones(dt) {
-    const st = STATS;
+  function orbitDrones(dt) {
     const orbitR = 26;
     for (const d of droneList) {
       d.offset += dt * 1.8;
@@ -972,6 +1099,13 @@ const Game = (() => {
       const ty = p.y + Math.sin(d.offset) * orbitR;
       d.x += (tx - d.x) * Math.min(1, dt * 14);
       d.y += (ty - d.y) * Math.min(1, dt * 14);
+    }
+  }
+
+  function updateDrones(dt) {
+    const st = ST;
+    orbitDrones(dt);
+    for (const d of droneList) {
       d.fireT -= dt;
       if (d.fireT <= 0) {
         const e = nearest(d.x, d.y, st.droneRange);
@@ -1013,30 +1147,30 @@ const Game = (() => {
   }
 
   function updateTrail(dt) {
-    const st = STATS;
+    const st = ST;
     if (!st.trail) return;
     const sp = Math.hypot(p.vx, p.vy);
     p.trailT -= dt;
     if (p.trailT <= 0 && sp > 40) {
       p.trailT = 0.1;
-      if (patches.length >= 36) patches.shift();
-      patches.push({ x: p.x, y: p.y, life: 2, r: 8, hitT: 0 });
+      if (p.patches.length >= 36) p.patches.shift();
+      p.patches.push({ x: p.x, y: p.y, life: 2, r: 8, hitT: 0 });
     }
-    for (let i = patches.length - 1; i >= 0; i--) {
-      const c = patches[i];
+    for (let i = p.patches.length - 1; i >= 0; i--) {
+      const c = p.patches[i];
       c.life -= dt;
       c.hitT -= dt;
       if (c.hitT <= 0) {
         c.hitT = 0.3;
         near(c.x, c.y, c.r, e => { dealDamage(e, st.cannonDmg * st.trailDmg, { quiet: true, color: 1 }); });
       }
-      if (c.life <= 0) patches.splice(i, 1);
+      if (c.life <= 0) p.patches.splice(i, 1);
     }
   }
 
   /* ---------- Joueur ---------- */
   function tryDash(mv) {
-    const st = STATS;
+    const st = ST;
     if (!st.dash || p.charges <= 0 || p.dashT > 0) return;
     let dx = mv.x, dy = mv.y;
     if (Math.abs(dx) + Math.abs(dy) < 0.1) { dx = Math.cos(p.ang); dy = Math.sin(p.ang); }
@@ -1046,15 +1180,14 @@ const Game = (() => {
     p.dashT = st.dashLen;
     p.charges--;
     p.dashHit = new Set();
-    Audio8.fx.dash();
+    sfx('dash');
     burst(p.x, p.y, 14, ['#c8f4ff', '#4ad6ff'], 90, 0.3);
     shake = Math.max(shake, 1);
   }
 
-  function updatePlayer(dt) {
-    const st = STATS;
-    const mv = moveVector();
-
+  /* Pilotage local : le seul morceau que l'invité simule lui-même, pour répondre sans délai. */
+  function moveShip(dt, mv) {
+    const st = ST;
     if (Input.dashQueued) { tryDash(mv); Input.dashQueued = false; }
     if (st.dash && p.charges < st.dashCharges) {
       p.dashCd += dt;
@@ -1069,16 +1202,7 @@ const Game = (() => {
       p.vy = p.dashVY * 0.3;
       spark(p.x, p.y, '#4ad6ff');
       spark(p.x, p.y, '#ffffff');
-      if (st.dashDmg > 0) {
-        near(p.x, p.y, 12, e => {
-          if (p.dashHit.has(e)) return;
-          p.dashHit.add(e);
-          dealDamage(e, st.cannonDmg * st.dashDmg, { crit: true });
-        });
-      }
-      if (p.dashT <= 0 && st.dashNova) {
-        explosion(p.x, p.y, 62, st.cannonDmg * 4, '#4ad6ff', { knock: 150 });
-      }
+      if (mode !== 'guest') dashEffects(p.dashT <= 0);
     } else {
       // Pilotage à l'ancienne : on pousse, le vaisseau glisse.
       const tvx = mv.x * st.speed, tvy = mv.y * st.speed;
@@ -1097,8 +1221,38 @@ const Game = (() => {
       const tx = p.x + Math.cos(a) * 7 + rnd(-1, 1), ty = p.y + Math.sin(a) * 7 + rnd(-1, 1);
       parts.push({ x: tx, y: ty, vx: Math.cos(a) * 40 + rnd(-10, 10), vy: Math.sin(a) * 40 + rnd(-10, 10), t: rnd(0.1, 0.25), c: pick(['#ffe14a', '#ff9d2e', '#ff4a4a']), z: 1 });
     }
+  }
 
-    // Cible et visée
+  function dashEffects(ended) {
+    const st = ST;
+    if (st.dashDmg > 0) {
+      if (!p.dashHit) p.dashHit = new Set();
+      near(p.x, p.y, 12, e => {
+        if (p.dashHit.has(e)) return;
+        p.dashHit.add(e);
+        dealDamage(e, st.cannonDmg * st.dashDmg, { crit: true });
+      });
+    }
+    if (ended && st.dashNova) explosion(p.x, p.y, 62, st.cannonDmg * 4, '#4ad6ff', { knock: 150 });
+  }
+
+  function updatePlayer(dt) {
+    const st = ST;
+    let mv = null;
+    if (p.remote) {
+      // L'invité pilote de son côté ; on prolonge sa trajectoire entre deux messages.
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.thrust = Math.hypot(p.vx, p.vy) > 10 ? 1 : 0;
+      const wasDashing = p.dashT > 0;
+      p.dashT = p.netDash ? 0.05 : 0;
+      if (p.netDash) dashEffects(false);
+      else if (wasDashing) { dashEffects(true); p.dashHit = null; }
+    } else {
+      mv = moveVector();
+      moveShip(dt, mv);
+    }
+
     // Le boss passe en priorité, sauf si un ennemi est sur le point de nous toucher.
     let target = nearest(p.x, p.y, st.range * 1.05);
     if (boss && !boss.dead && Math.hypot(boss.x - p.x, boss.y - p.y) < st.range * 1.05 + boss.r) {
@@ -1107,8 +1261,10 @@ const Game = (() => {
     }
     let wantAim = p.aim;
     let shouldFire = false;
-    if (S.set.aim === 'mouse' && Input.mouseSeen) {
-      wantAim = Math.atan2(Input.my + camY - p.y, Input.mx + camX - p.x);
+    const manualAim = p.remote ? p.netAim
+      : S.set.aim === 'mouse' && Input.mouseSeen ? Math.atan2(Input.my + camY - p.y, Input.mx + camX - p.x) : null;
+    if (manualAim !== null) {
+      wantAim = manualAim;
       shouldFire = true;
     } else if (target) {
       // Tir anticipé : on vise là où l'ennemi sera.
@@ -1117,7 +1273,7 @@ const Game = (() => {
       wantAim = Math.atan2(target.y + target.vy * lead - p.y, target.x + target.vx * lead - p.x);
       shouldFire = true;
     } else if (p.thrust) {
-      wantAim = Math.atan2(mv.y, mv.x);
+      wantAim = mv ? Math.atan2(mv.y, mv.x) : Math.atan2(p.vy, p.vx);
     }
     let d = wantAim - p.aim;
     while (d > Math.PI) d -= TAU;
@@ -1136,9 +1292,6 @@ const Game = (() => {
     // Frénésie qui retombe
     if (p.frenzyT > 0) p.frenzyT -= dt;
     else if (p.frenzy > 0) p.frenzy = Math.max(0, p.frenzy - dt * 6);
-
-    // Combo qui retombe
-    if (run.comboT > 0) { run.comboT -= dt; if (run.comboT <= 0) run.combo = 0; }
 
     // Armes secondaires
     if (st.missile) {
@@ -1179,7 +1332,7 @@ const Game = (() => {
 
   function hurtPlayer(amount, source) {
     if (p.invuln > 0 || p.dashT > 0 || p.dead) return;
-    const st = STATS;
+    const st = ST;
     if (Math.random() < st.dodge) {
       p.invuln = 0.15;
       burst(p.x, p.y, 5, ['#ffffff'], 60, 0.2);
@@ -1191,7 +1344,7 @@ const Game = (() => {
       p.shieldT = 3.5;
       const left = p.shield - dmg;
       p.shield = Math.max(0, left);
-      Audio8.fx.shieldHit();
+      if (p === me) sfx('shieldHit'); else Coop.queue(['s', 'shieldHit']);
       p.invuln = st.invuln * 0.6;
       ringAt(p.x, p.y, 16, '#4ad6ff');
       if (left <= 0) {
@@ -1204,10 +1357,9 @@ const Game = (() => {
     p.hull -= dmg;
     p.invuln = st.invuln;
     p.flash = 0.2;
-    shake = Math.max(shake, 3);
-    Audio8.fx.hurt();
     burst(p.x, p.y, 8, ['#ff4a4a', '#ffffff'], 80, 0.3);
-    UI.hurtFlash();
+    if (p === me) { shake = Math.max(shake, 3); sfx('hurt'); UI.hurtFlash(); }
+    else Coop.queue(['h']);
     if (p.hull <= 0) {
       if (p.revives > 0) {
         p.revives--;
@@ -1215,7 +1367,7 @@ const Game = (() => {
         p.invuln = 2;
         addNova(p.x, p.y, 180, st.cannonDmg * 15, 320, '#ffffff');
         eBullets.length = 0;
-        UI.banner('CAPSULE ÉJECTÉE', 'Dernière chance');
+        sayBanner('CAPSULE ÉJECTÉE', 'Dernière chance');
       } else {
         killPlayer();
       }
@@ -1225,20 +1377,47 @@ const Game = (() => {
   function killPlayer() {
     p.dead = true;
     p.hull = 0;
-    run.over = true;
-    run.deathT = 1.6;
+    p.rescue = 0;
+    p.beam = null;
     burst(p.x, p.y, 110, ['#ffffff', '#4ad6ff', '#ff9d2e', '#ff4a4a'], 200, 1.2);
     ringAt(p.x, p.y, 90, '#4ad6ff');
-    shake = 10;
-    Audio8.fx.death();
-    Audio8.setIntensity(0);
+    sfx('death');
+    if (p === me) shake = 10;
+    if (players.every(s => s.dead)) {
+      run.over = true;
+      run.deathT = 1.6;
+      sayIntensity(0);
+    } else {
+      sayToast('Vaisseau à terre : rejoignez-le pour le réparer !');
+    }
+  }
+
+  /* Un vaisseau tombé revient quand son coéquipier reste près de lui, ou au secteur suivant. */
+  function reviveShip(s, frac) {
+    s.dead = false;
+    s.hull = s.st.maxHull * frac;
+    s.invuln = 2;
+    s.rescue = 0;
+    ringAt(s.x, s.y, 60, '#6cf06c');
+    sayToast('Vaisseau réparé !');
+  }
+  const RESCUE_TIME = 3;
+  function updateRescue(dt) {
+    if (!inCoop()) return;
+    for (const s of players) {
+      if (!s.dead) continue;
+      const ally = nearestAlive(s.x, s.y);
+      const close = !ally.dead && Math.hypot(ally.x - s.x, ally.y - s.y) < 50;
+      s.rescue = close ? s.rescue + dt : Math.max(0, s.rescue - dt);
+      if (s.rescue >= RESCUE_TIME) reviveShip(s, 0.4);
+    }
   }
 
   function endRun(abandoned) {
     // Rien n'est perdu : ce qui traîne encore est ramassé.
     for (const o of orbs) collectOrb(o);
     orbs.length = 0;
-    const st = STATS;
+    const st = me.st;
     let bonus = 0;
     if (st.interest > 0) {
       bonus = run.units * st.interest;
@@ -1247,15 +1426,38 @@ const Game = (() => {
       S.ascUnits += bonus;
     }
     Save.write();
-    UI.showOver({
+    const summary = {
       time: run.time, kills: run.kills, units: run.units, bonus, cores: run.cores,
       sector: run.sector, bosses: run.bossesKilled, best: S.best, bestCombo: run.bestCombo, abandoned: !!abandoned,
-    });
+    };
+    if (mode === 'host') Coop.hostOver(summary);
+    UI.showOver(summary);
+  }
+
+  /* Fin du vol vue par l'invité. */
+  function guestEnd(r, lost) {
+    if (!me) return;
+    let bonus = 0;
+    if (me.st.interest > 0) {
+      bonus = run.units * me.st.interest;
+      S.units += bonus;
+      S.lifeUnits += bonus;
+      S.ascUnits += bonus;
+    }
+    const num = v => Number(v) || 0; // ces valeurs viennent de l'autre appareil
+    S.kills += num(r.kills);
+    Save.write();
+    const summary = {
+      time: num(r.time), kills: num(r.kills), units: run.units, bonus, cores: run.cores, sector: num(r.sector),
+      bosses: num(r.bosses), best: S.best, bestCombo: num(r.bestCombo), lost: !!lost, abandoned: !!r.abandoned,
+    };
+    clearAll();
+    UI.showOver(summary);
   }
 
   /* ---------- Pas de simulation ---------- */
   function step(rawDt) {
-    if (!p || !run) return;
+    if (!me || !run) return;
     time += rawDt;
     if (run.over) {
       run.deathT -= rawDt;
@@ -1266,15 +1468,23 @@ const Game = (() => {
     }
 
     let dt = rawDt;
-    if (STATS.dilate && p.hull < STATS.maxHull * 0.3) dt *= 0.7;
+    if (me.st.dilate && !me.dead && me.hull < me.st.maxHull * 0.3) dt *= 0.7;
 
     run.t += dt;
     run.time += dt;
+    if (run.comboT > 0) { run.comboT -= dt; if (run.comboT <= 0) run.combo = 0; }
 
-    updatePlayer(dt);
+    for (const s of players) {
+      if (s.dead) continue;
+      setActor(s);
+      updatePlayer(dt);
+    }
     rebuildGrid();
 
-    for (let i = 0; i < enemies.length; i++) updateEnemy(enemies[i], dt);
+    for (let i = 0; i < enemies.length; i++) {
+      setActor(nearestAlive(enemies[i].x, enemies[i].y));
+      updateEnemy(enemies[i], dt);
+    }
     separateEnemies(dt);
     rebuildGrid();
 
@@ -1282,12 +1492,18 @@ const Game = (() => {
     updateMissiles(dt);
     updateMines(dt);
     updateNovas(dt);
-    updateDrones(dt);
-    updateTrail(dt);
+    for (const s of players) {
+      if (s.dead) continue;
+      setActor(s);
+      updateDrones(dt);
+      updateTrail(dt);
+    }
     updateContacts();
     updateEnemyBullets(dt);
     updateOrbs(dt);
+    updateRescue(dt);
     updateSpawns(dt);
+    setActor(me);
 
     // Nettoyage des morts
     for (let i = enemies.length - 1; i >= 0; i--) {
@@ -1300,9 +1516,10 @@ const Game = (() => {
   }
 
   function updateBullets(dt) {
-    const st = STATS;
     for (let i = pBullets.length - 1; i >= 0; i--) {
       const b = pBullets[i];
+      setActor(ownerOf(b.o));
+      const st = ST;
       b.life -= dt;
       let dead = b.life <= 0;
       if (!dead) {
@@ -1355,44 +1572,53 @@ const Game = (() => {
   }
 
   function updateContacts() {
-    const st = STATS;
-    near(p.x, p.y, 6, e => {
-      if (e.t.ai === 'flee') return;
-      const wasInv = p.invuln > 0 || p.dashT > 0;
-      if (!wasInv) {
-        hurtPlayer(e.dmg, 'contact');
-        if (st.thorns > 0) dealDamage(e, st.cannonDmg * st.thorns, { quiet: false, color: 1 });
-        if (st.ram) dealDamage(e, st.cannonDmg * 8, { crit: true, color: 5 });
-      }
-      if (!p.dead && e.t.dieOnHit && !wasInv) {
-        killEnemy(e);
-      } else if (!e.boss && !e.dead) {
-        const dx = e.x - p.x, dy = e.y - p.y;
-        const d = Math.hypot(dx, dy) || 1;
-        e.vx = (dx / d) * 160;
-        e.vy = (dy / d) * 160;
-      }
-    });
+    for (const s of players) {
+      if (s.dead) continue;
+      setActor(s);
+      const st = ST;
+      near(s.x, s.y, 6, e => {
+        if (e.t.ai === 'flee') return;
+        const wasInv = s.invuln > 0 || s.dashT > 0;
+        if (!wasInv) {
+          hurtPlayer(e.dmg, 'contact');
+          if (st.thorns > 0) dealDamage(e, st.cannonDmg * st.thorns, { quiet: false, color: 1 });
+          if (st.ram) dealDamage(e, st.cannonDmg * 8, { crit: true, color: 5 });
+        }
+        if (!s.dead && e.t.dieOnHit && !wasInv) {
+          killEnemy(e);
+        } else if (!e.boss && !e.dead) {
+          const dx = e.x - s.x, dy = e.y - s.y;
+          const d = Math.hypot(dx, dy) || 1;
+          e.vx = (dx / d) * 160;
+          e.vy = (dy / d) * 160;
+        }
+      });
+    }
   }
 
   function updateEnemyBullets(dt) {
-    const st = STATS;
     for (let i = eBullets.length - 1; i >= 0; i--) {
       const b = eBullets[i];
       b.life -= dt;
       b.x += b.vx * dt;
       b.y += b.vy * dt;
-      const dx = b.x - p.x, dy = b.y - p.y;
       let dead = b.life <= 0;
-      if (!dead && dx * dx + dy * dy < (5 + b.r) * (5 + b.r)) {
-        if (p.invuln <= 0 && p.dashT <= 0 && st.reflect > 0 && Math.random() < st.reflect) {
-          addBullet(b.x, b.y, Math.atan2(-b.vy, -b.vx), 300, st.cannonDmg * 2, null, { pierce: 0, bounce: 0, color: '#7ff0ff' });
-          ringAt(p.x, p.y, 14, '#7ff0ff');
+      if (!dead) {
+        for (const s of players) {
+          if (s.dead) continue;
+          const dx = b.x - s.x, dy = b.y - s.y;
+          if (dx * dx + dy * dy >= (5 + b.r) * (5 + b.r)) continue;
+          if (s.invuln > 0 || s.dashT > 0) continue;
+          setActor(s);
+          const st = ST;
+          if (st.reflect > 0 && Math.random() < st.reflect) {
+            addBullet(b.x, b.y, Math.atan2(-b.vy, -b.vx), 300, st.cannonDmg * 2, null, { pierce: 0, bounce: 0, color: '#7ff0ff' });
+            ringAt(s.x, s.y, 14, '#7ff0ff');
+          } else {
+            hurtPlayer(b.dmg, 'bullet');
+          }
           dead = true;
-        } else if (p.invuln <= 0 && p.dashT <= 0) {
-          hurtPlayer(b.dmg, 'bullet');
-          dead = true;
-          if (p.dead) return;
+          break;
         }
       }
       if (dead) {
@@ -1506,15 +1732,16 @@ const Game = (() => {
   function draw() {
     if (!ctx) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (!p && !run) { camX = time * 8; camY = time * 3; drawStars(); return; }
-    const focus = p || { x: camX + VW / 2, y: camY + VH / 2 };
+    if (!me && !run) { camX = time * 8; camY = time * 3; drawStars(); return; }
+    setActor(me);
+    const focus = me;
     const sh = S.set.shake ? shake : 0;
     camX = Math.round(focus.x - VW / 2 + rnd(-sh, sh));
     camY = Math.round(focus.y - VH / 2 + rnd(-sh, sh));
     drawStars();
 
     // Traînée plasma
-    for (const c of patches) {
+    for (const ship of players) for (const c of ship.patches) {
       const r = c.r * clamp(c.life, 0.2, 1);
       ctx.fillStyle = c.life > 1 ? '#ff6cd0' : c.life > 0.5 ? '#b02a8c' : '#5a1a50';
       const sx = c.x - camX, sy = c.y - camY;
@@ -1602,11 +1829,12 @@ const Game = (() => {
       ctx.fillRect(sx - (b.r >> 1), sy - (b.r >> 1), Math.max(1, b.r), Math.max(1, b.r));
     }
 
-    // Rayon
-    if (p && beamHit && STATS.beam) {
-      const x0 = p.x - camX, y0 = p.y - camY;
-      const x1 = x0 + Math.cos(beamHit.a) * beamHit.len, y1 = y0 + Math.sin(beamHit.a) * beamHit.len;
-      const w = beamHit.w;
+    // Rayons
+    for (const s of players) {
+      if (s.dead || !s.beam) continue;
+      const x0 = s.x - camX, y0 = s.y - camY;
+      const x1 = x0 + Math.cos(s.beam.a) * s.beam.len, y1 = y0 + Math.sin(s.beam.a) * s.beam.len;
+      const w = s.beam.w;
       pxLine(x0, y0, x1, y1, '#2a8cc8', Math.max(1, w));
       pxLine(x0, y0, x1, y1, Math.floor(time * 20) % 2 ? '#c8f4ff' : '#ffffff', Math.max(1, w - 2));
     }
@@ -1627,33 +1855,9 @@ const Game = (() => {
       }
     }
 
-    // Joueur
-    if (p && !p.dead) {
-      // Bouclier
-      if (STATS.shield && p.shield > 0) {
-        const c = p.shieldT > 3 ? '#ffffff' : '#4ad6ff';
-        pxCircle(p.x - camX, p.y - camY, 13, c, 2 + Math.floor((1 - p.shield / (STATS.maxHull * STATS.shieldMul)) * 3));
-      }
-      const blinking = p.invuln > 0 && Math.floor(time * 20) % 2 === 0 && p.dashT <= 0;
-      if (!blinking) {
-        const set = Sprites.ship;
-        drawSprite(p.flash > 0 ? set.w : set.n, p.x, p.y, p.ang + Math.PI / 2);
-        drawPods();
-      }
-      // Aimant et jauge de saut
-      if (STATS.dash) {
-        const sx = Math.round(p.x - camX), sy = Math.round(p.y - camY) + 12;
-        const n = STATS.dashCharges;
-        for (let i = 0; i < n; i++) {
-          ctx.fillStyle = i < p.charges ? '#4ad6ff' : '#1a3f7a';
-          ctx.fillRect(sx - n * 2 + i * 4, sy, 3, 1);
-        }
-      }
-    }
-    // Drones
-    if (p && !p.dead) {
-      for (const d of droneList) drawSprite(Sprites.drone.n, d.x, d.y, 0);
-    }
+    // Joueurs
+    for (const s of players) drawShip(s);
+    setActor(me);
 
     // Novas
     for (const n of novas) {
@@ -1687,7 +1891,7 @@ const Game = (() => {
       ctx.fillRect(Math.round(s.ox + (s.x - s.ox) * m) - 3, Math.round(s.oy + (s.y - s.oy) * m) - 3, 6, 6);
     }
     // Réticule souris
-    if (S.set.aim === 'mouse' && Input.mouseSeen && p) {
+    if (S.set.aim === 'mouse' && Input.mouseSeen && me) {
       ctx.fillStyle = '#ffe14a';
       const mx = Math.round(Input.mx), my = Math.round(Input.my);
       ctx.fillRect(mx - 4, my, 3, 1);
@@ -1697,9 +1901,42 @@ const Game = (() => {
     }
   }
 
+  function drawShip(s) {
+    setActor(s);
+    const st = ST;
+    if (s.dead) {
+      // Épave clignotante, avec la jauge de réparation autour.
+      if (Math.floor(time * 4) % 2 === 0) drawSprite((s.idx === 1 ? Sprites.ship2 : Sprites.ship).e, s.x, s.y, s.ang + Math.PI / 2);
+      pxCircle(s.x - camX, s.y - camY, 50, '#30304a', 5);
+      if (s.rescue > 0) pxCircle(s.x - camX, s.y - camY, 16, '#6cf06c', 3 - Math.floor((s.rescue / 3) * 2.5));
+      return;
+    }
+    // Bouclier
+    if (st.shield && s.shield > 0) {
+      const c = s.shieldT > 3 ? '#ffffff' : '#4ad6ff';
+      pxCircle(s.x - camX, s.y - camY, 13, c, 2 + Math.floor((1 - s.shield / (st.maxHull * st.shieldMul)) * 3));
+    }
+    const blinking = s.invuln > 0 && Math.floor(time * 20) % 2 === 0 && s.dashT <= 0;
+    if (!blinking) {
+      const set = s.idx === 1 ? Sprites.ship2 : Sprites.ship;
+      drawSprite(s.flash > 0 ? set.w : set.n, s.x, s.y, s.ang + Math.PI / 2);
+      drawPods();
+    }
+    // Jauge de saut
+    if (s === me && st.dash) {
+      const sx = Math.round(s.x - camX), sy = Math.round(s.y - camY) + 12;
+      const n = st.dashCharges;
+      for (let i = 0; i < n; i++) {
+        ctx.fillStyle = i < s.charges ? '#4ad6ff' : '#1a3f7a';
+        ctx.fillRect(sx - n * 2 + i * 4, sy, 3, 1);
+      }
+    }
+    for (const d of s.drones) drawSprite(Sprites.drone.n, d.x, d.y, 0);
+  }
+
   /* Le vaisseau s'équipe visuellement selon ce qu'on débloque. */
   function drawPods() {
-    const st = STATS;
+    const st = ST;
     const sx = Math.round(p.x - camX), sy = Math.round(p.y - camY);
     const step = TAU / 32;
     const a = Math.round((p.ang + Math.PI / 2) / step) * step;
@@ -1715,31 +1952,37 @@ const Game = (() => {
   }
 
   /* Flèches vers ce qui est hors écran et important. */
+  function edgeArrow(wx, wy, col) {
+    const sx = wx - camX, sy = wy - camY;
+    if (sx > 0 && sx < VW && sy > 0 && sy < VH) return;
+    const cx = VW / 2, cy = VH / 2;
+    const a = Math.atan2(sy - cy, sx - cx);
+    const k = Math.min((VW / 2 - 14) / Math.max(0.01, Math.abs(Math.cos(a))), (VH / 2 - 14) / Math.max(0.01, Math.abs(Math.sin(a))));
+    const x = Math.round(cx + Math.cos(a) * k), y = Math.round(cy + Math.sin(a) * k);
+    const blink = Math.floor(time * 6) % 2 === 0;
+    ctx.fillStyle = blink ? col : '#ffffff';
+    for (let i = 0; i < 5; i++) {
+      ctx.fillRect(Math.round(x + Math.cos(a) * i), Math.round(y + Math.sin(a) * i), 2, 2);
+      ctx.fillRect(Math.round(x + Math.cos(a + 2.5) * i), Math.round(y + Math.sin(a + 2.5) * i), 1, 1);
+      ctx.fillRect(Math.round(x + Math.cos(a - 2.5) * i), Math.round(y + Math.sin(a - 2.5) * i), 1, 1);
+    }
+  }
   function drawIndicators() {
-    if (!p) return;
+    if (!me) return;
     for (const e of enemies) {
       if (e.dead || !(e.boss || e.type === 'cargo')) continue;
-      const sx = e.x - camX, sy = e.y - camY;
-      if (sx > 0 && sx < VW && sy > 0 && sy < VH) continue;
-      const cx = VW / 2, cy = VH / 2;
-      const a = Math.atan2(sy - cy, sx - cx);
-      const k = Math.min((VW / 2 - 14) / Math.max(0.01, Math.abs(Math.cos(a))), (VH / 2 - 14) / Math.max(0.01, Math.abs(Math.sin(a))));
-      const x = Math.round(cx + Math.cos(a) * k), y = Math.round(cy + Math.sin(a) * k);
-      const col = e.boss ? '#ff4a4a' : '#ffd84a';
-      const blink = Math.floor(time * 6) % 2 === 0;
-      ctx.fillStyle = blink ? col : '#ffffff';
-      for (let i = 0; i < 5; i++) {
-        ctx.fillRect(Math.round(x + Math.cos(a) * i), Math.round(y + Math.sin(a) * i), 2, 2);
-        ctx.fillRect(Math.round(x + Math.cos(a + 2.5) * i), Math.round(y + Math.sin(a + 2.5) * i), 1, 1);
-        ctx.fillRect(Math.round(x + Math.cos(a - 2.5) * i), Math.round(y + Math.sin(a - 2.5) * i), 1, 1);
-      }
+      edgeArrow(e.x, e.y, e.boss ? '#ff4a4a' : '#ffd84a');
     }
+    for (const s of players) if (s !== me) edgeArrow(s.x, s.y, s.dead ? '#6cf06c' : '#4ad6ff');
   }
 
   /* ---------- Boucle ---------- */
   function frame(dt, active) {
     frameT += dt;
-    if (active && p) {
+    if (mode === 'guest' && me) {
+      time += dt;
+      Coop.guestFrame(dt, active);
+    } else if (active && me) {
       accumulator += Math.min(dt, 0.1);
       const h = 1 / 60;
       let n = 0;
@@ -1747,30 +1990,34 @@ const Game = (() => {
         step(h);
         accumulator -= h;
         n++;
-        if (!p) break;
+        if (!me) break;
       }
-    } else if (!p) {
+    } else if (!me) {
       time += dt;
     }
     draw();
   }
 
-  function isFlying() { return !!(p && run && !run.over); }
+  function isFlying() { return !!(me && run && !run.over); }
 
   function hudData() {
-    if (!run) return null;
-    const st = STATS;
+    if (!run || !me) return null;
+    const st = me.st;
+    const mate = players.find(s => s !== me);
     return {
-      hull: p ? Math.max(0, p.hull) : 0, maxHull: st.maxHull,
-      shield: p ? p.shield : 0, maxShield: st.shield ? st.maxHull * st.shieldMul : 0,
+      hull: Math.max(0, me.hull), maxHull: st.maxHull,
+      shield: me.shield, maxShield: st.shield ? st.maxHull * st.shieldMul : 0,
       sector: run.sector, prog: clamp(run.t / run.dur, 0, 1),
       boss: boss ? { name: boss.def.name, hp: boss.hp, maxHp: boss.maxHp } : null,
       combo: run.combo, comboBonus: st.combo ? Math.min(st.comboMax, run.combo * 0.01) : 0,
-      frenzy: p ? Math.floor(p.frenzy) : 0,
-      dash: st.dash, charges: p ? p.charges : 0, dashMax: st.dashCharges,
-      dashProg: st.dash && p ? clamp(p.dashCd / st.dashCd, 0, 1) : 0,
-      kills: run.kills, time: run.time, revives: p ? p.revives : 0,
-      lowHull: p ? p.hull < st.maxHull * 0.3 : false,
+      frenzy: Math.floor(me.frenzy),
+      dash: st.dash, charges: me.charges, dashMax: st.dashCharges,
+      dashProg: st.dash ? clamp(me.dashCd / st.dashCd, 0, 1) : 0,
+      kills: run.kills, time: run.time, revives: me.revives,
+      lowHull: !me.dead && me.hull < st.maxHull * 0.3,
+      dead: me.dead,
+      mate: mate ? { hull: Math.max(0, mate.hull), maxHull: mate.st.maxHull, dead: mate.dead, rescue: mate.rescue } : null,
+      rescue: me.rescue,
     };
   }
 
@@ -1812,9 +2059,10 @@ const Game = (() => {
 
   function queueDash() { Input.dashQueued = true; }
   function clearAll() {
-    p = null; run = null; boss = null;
+    p = null; me = null; run = null; boss = null; players = []; mode = 'solo'; droneList = [];
     enemies = []; pBullets = []; eBullets = []; missiles = []; mines = []; orbs = [];
-    parts = []; rings = []; novas = []; bolts = []; patches = []; texts = []; droneList = [];
+    parts = []; rings = []; novas = []; bolts = []; texts = [];
+    updateView();
   }
 
   /* Abandon volontaire : on garde les unités et on passe au bilan. */
@@ -1825,8 +2073,21 @@ const Game = (() => {
   }
 
   return {
-    init, start, frame, step, draw, hudData, isFlying, onStatsChanged, queueDash, abandon, clearAll,
-    resize, Input,
-    get debug() { return { p, run, enemies, boss, orbs, pBullets, eBullets, VW, VH, pixelScale }; },
+    init, start, startGuest, guestEnd, frame, step, draw, hudData, isFlying, onStatsChanged, setMateStats, removeMate,
+    queueDash, abandon, clearAll, updateView, resize, Input, moveVector,
+    get debug() { return { p: me, run, enemies, boss, orbs, pBullets, eBullets, VW, VH, pixelScale, players, mode }; },
+    /* Accès réservé à la synchronisation en ligne (coop.js). */
+    net: {
+      get players() { return players; }, get me() { return me; }, get run() { return run; }, get boss() { return boss; },
+      set boss(b) { boss = b; },
+      get enemies() { return enemies; }, get pBullets() { return pBullets; }, get eBullets() { return eBullets; },
+      get missiles() { return missiles; }, get mines() { return mines; }, get orbs() { return orbs; }, get novas() { return novas; },
+      get VW() { return VW; }, get VH() { return VH; }, get camX() { return camX; }, get camY() { return camY; },
+      setActor, moveShip, orbitDrones, updateFx, burst, spark,
+      addRemoteRing(x, y, r, c) { if (rings.length < 40) rings.push({ x, y, r: r * 0.2, max: r, c, t: 0 }); },
+      addRemoteBolt(pts, t, color) { bolts.push({ pts, t, color }); },
+      addRemoteText(x, y, s, c) { if (texts.length < 60) texts.push({ x, y, t: 0.55, s, c }); },
+      addShake(v) { shake = Math.max(shake, v); },
+    },
   };
 })();

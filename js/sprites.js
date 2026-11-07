@@ -285,6 +285,15 @@ function initSprites() {
       e: buildSprite(SHAPES[name], eliteColor),
     };
   }
+  // Le second joueur : même vaisseau, en orange, pour se repérer d'un coup d'œil.
+  const P2 = { b: '#ffe2a8', c: '#ff9d2e', d: '#d9701c', e: '#7a3a12', r: '#4ad6ff' };
+  const recolorP2 = ch => P2[ch] || PAL[ch];
+  Sprites.ship2 = {
+    n: buildSprite(SHAPES.ship, recolorP2),
+    w: Sprites.ship.w,
+    e: buildSprite(SHAPES.ship, () => '#5c5c80'),
+  };
+  Sprites.ship.e = buildSprite(SHAPES.ship, () => '#5c5c80');
   initMiniFont();
 }
 

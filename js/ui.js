@@ -19,7 +19,9 @@ const UI = (() => {
     show('hud', name === 'fly' || name === 'pause');
     show('pause', name === 'pause');
     show('over', name === 'over');
+    show('lobby', name === 'lobby');
     show('hangar', name === 'hangar');
+    Coop.setLocalPause(Game.isFlying() && name !== 'fly');
     show('dashBtn', name === 'fly' && isTouch() && STATS.dash);
     if (name !== 'fly') $('hurt').className = '';
     if (name === 'title') refreshTitle();
@@ -33,9 +35,11 @@ const UI = (() => {
     Audio8.applySettings();
     Audio8.setIntensity(0);
     computeStats();
+    if (Coop.role === 'guest') return; // c'est l'hôte qui lance le vol
     const start = clamp(S.startSector, 1, maxStartSector());
     setScreen('fly');
-    Game.start(start);
+    if (Coop.role === 'host') Coop.startFlight(start);
+    else Game.start(start);
     Save.write();
     if (!S.seenHelp) {
       S.seenHelp = true;
@@ -59,6 +63,7 @@ const UI = (() => {
     Audio8.fx.click();
     if (Game.isFlying()) { Game.onStatsChanged(); setScreen(hangarFrom === 'pause' ? 'pause' : 'fly'); }
     else if (hangarFrom === 'over') setScreen('over');
+    else if (hangarFrom === 'lobby' && Coop.role) setScreen('lobby');
     else setScreen('title');
   }
 
@@ -85,6 +90,20 @@ const UI = (() => {
       $('shieldFill').style.width = `${clamp((d.shield / d.maxShield) * 100, 0, 100)}%`;
       $('shieldText').textContent = fmt(Math.ceil(d.shield));
     }
+    $('mateLine').hidden = !d.mate;
+    if (d.mate) {
+      $('mateFill').style.width = `${clamp((d.mate.hull / d.mate.maxHull) * 100, 0, 100)}%`;
+      $('mateFill').parentElement.classList.toggle('down', d.mate.dead);
+      $('mateText').textContent = d.mate.dead ? 'À TERRE' : fmt(Math.ceil(d.mate.hull));
+    }
+    let coopText = '';
+    if (Coop.role) {
+      if (Coop.blocked() || (Coop.role === 'guest' && Coop.remotePaused)) coopText = 'PAUSE : ton coéquipier est dans un menu';
+      else if (d.dead) coopText = d.rescue > 0 ? 'Réparation en cours…' : "À terre : ton coéquipier doit s'approcher pour te réparer";
+      else if (d.mate && d.mate.dead) coopText = d.mate.rescue > 0 ? 'Réparation en cours, reste près de lui…' : 'Coéquipier à terre : va le rejoindre (flèche verte)';
+    }
+    $('coopStatus').hidden = !coopText;
+    $('coopStatus').textContent = coopText;
     $('sectorText').textContent = `SECTEUR ${d.sector}`;
     $('progFill').style.width = `${d.prog * 100}%`;
     const revive = d.revives > 0 ? `  ·  ♥${d.revives}` : '';
@@ -143,8 +162,9 @@ const UI = (() => {
   /* ---------- Bilan ---------- */
   function showOver(r) {
     const head = $('overTitle');
-    head.textContent = r.abandoned ? 'RETOUR AU HANGAR' : 'VAISSEAU DETRUIT';
+    head.textContent = r.lost ? 'LIAISON PERDUE' : r.abandoned ? 'RETOUR AU HANGAR' : 'VAISSEAU DETRUIT';
     head.classList.toggle('red', !r.abandoned);
+    refreshOverButtons();
     const rows = [
       ['Temps de vol', fmtTime(r.time), ''],
       ['Secteur atteint', `${r.sector}${r.sector >= r.best ? ' (record)' : ''}`, ''],
@@ -161,6 +181,48 @@ const UI = (() => {
       ? `${n} amélioration${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''} dans l'arbre !`
       : 'Continue : chaque épave rapproche la prochaine amélioration.';
     setScreen('over');
+  }
+
+  function refreshOverButtons() {
+    const guest = Coop.role === 'guest';
+    $('btnOverPlay').disabled = guest;
+    $('btnOverPlay').textContent = guest ? "ATTENTE DE L'HOTE" : Coop.role === 'host' ? 'REDECOLLER ENSEMBLE' : 'REDECOLLER';
+    $('btnOverLeave').hidden = !Coop.role;
+  }
+  function refreshAfterCoop() {
+    refreshOverButtons();
+    renderLobby();
+    Tree.refreshTop(true);
+  }
+
+  /* ---------- Jouer à deux ---------- */
+  function shareLink() {
+    return `${location.origin}${location.pathname}?partie=${Coop.code}`;
+  }
+  function renderLobby() {
+    const ready = Coop.state === 'ready';
+    const hosting = Coop.role === 'host';
+    const busy = Coop.state !== 'idle';
+    $('lobbyChoice').hidden = busy;
+    $('lobbyHost').hidden = !hosting || ready;
+    $('lobbyCode').textContent = Coop.code;
+    $('lobbyHostText').textContent = Coop.state === 'opening'
+      ? 'Ouverture de la partie…'
+      : 'Donne ce code à ton coéquipier :';
+    $('btnCopyLink').hidden = Coop.state !== 'waiting' || !location.protocol.startsWith('http');
+    let status = '';
+    if (Coop.state === 'waiting') status = 'En attente de ton coéquipier…';
+    else if (Coop.state === 'connecting') status = 'Connexion à la partie…';
+    else if (ready) status = hosting ? 'Coéquipier connecté. Vous pouvez décoller !' : "Connecté. L'hôte lancera le vol.";
+    $('lobbyStatus').textContent = status;
+    $('lobbyError').textContent = Coop.message;
+    $('btnCoopStart').hidden = !(ready && hosting);
+    $('btnCoopTree').hidden = !ready;
+    $('btnCoopBack').textContent = busy ? 'QUITTER' : 'RETOUR';
+  }
+  function openLobby() {
+    renderLobby();
+    setScreen('lobby');
   }
 
   /* ---------- Titre ---------- */
@@ -277,19 +339,55 @@ const UI = (() => {
   function bindButtons() {
     const on = (id, fn) => $(id).addEventListener('click', () => { Audio8.init(); fn(); });
     on('btnPlay', launch);
+    on('btnTitleCoop', openLobby);
+    on('btnCoopHost', () => Coop.host());
+    on('btnCoopJoin', () => Coop.join($('joinCode').value));
+    on('btnCoopStart', launch);
+    on('btnCoopTree', () => openHangar('lobby'));
+    on('btnCoopBack', () => {
+      if (Coop.role) Coop.leave();
+      setScreen('title');
+    });
+    on('btnOverLeave', () => {
+      Coop.leave();
+      setScreen('title');
+    });
+    on('btnCopyLink', async () => {
+      try {
+        await navigator.clipboard.writeText(shareLink());
+        toast('Lien copié');
+      } catch (err) {
+        toast('Copie impossible : donne plutôt le code');
+      }
+    });
+    $('joinCode').addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.code === 'Enter') { Audio8.init(); Coop.join($('joinCode').value); }
+    });
+    Coop.onChange = renderLobby;
     on('btnTitleTree', () => openHangar('title'));
     on('btnTitleOptions', () => openOptions('title'));
     on('btnResume', resume);
     on('btnPauseTree', () => openHangar('pause'));
     on('btnPauseOptions', () => openOptions('pause'));
     on('btnAbandon', () => {
-      confirmBox('RENTRER ?', 'Le vol s\'arrête ici. Toutes tes unités sont conservées.', 'RENTRER', () => Game.abandon());
+      if (Coop.role === 'guest') {
+        confirmBox('QUITTER ?', 'Tu quittes la partie à deux. Toutes tes unités sont conservées.', 'QUITTER', () => {
+          Coop.leave();
+        });
+        return;
+      }
+      const text = Coop.role === 'host'
+        ? 'Le vol s\'arrête pour vous deux. Toutes les unités sont conservées.'
+        : 'Le vol s\'arrête ici. Toutes tes unités sont conservées.';
+      confirmBox('RENTRER ?', text, 'RENTRER', () => Game.abandon());
     });
     on('btnOverTree', () => openHangar('over'));
     on('btnOverPlay', launch);
     on('btnOptionsBack', () => show('options', false));
     on('btnWipe', () => {
       confirmBox('TOUT EFFACER ?', 'Unités, noyaux, matière noire, arbre : tout disparaîtra définitivement.', 'EFFACER', () => {
+        if (Coop.role) Coop.leave();
         Save.wipe();
         computeStats();
         Game.clearAll();
@@ -315,7 +413,8 @@ const UI = (() => {
     $('autoBuyBox').addEventListener('change', e => { S.autoBuy = e.target.checked; Save.write(); });
     const dash = $('dashBtn');
     dash.addEventListener('pointerdown', e => { e.preventDefault(); Game.queueDash(); });
-    window.addEventListener('blur', () => { if (screen === 'fly') pause(); });
+    // À deux, changer de fenêtre ne doit pas figer la partie de l'autre.
+    window.addEventListener('blur', () => { if (screen === 'fly' && !Coop.role) pause(); });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) { Save.write(); if (screen === 'fly') pause(); }
     });
@@ -323,11 +422,19 @@ const UI = (() => {
     window.addEventListener('contextmenu', e => e.preventDefault());
   }
 
+  /* Lien d'invitation : le code est déjà rempli, il ne reste qu'à rejoindre. */
+  function handleInvite() {
+    const invited = new URLSearchParams(location.search).get('partie');
+    if (!invited) return;
+    $('joinCode').value = Coop.cleanCode(invited);
+    openLobby();
+  }
+
   function getScreen() { return screen; }
   function isHangarFromFlight() { return Game.isFlying(); }
 
   return {
-    setScreen, launch, updateHud, banner, toast, hurtFlash, bumpWallet, showOver, bindKeys, bindButtons,
+    setScreen, launch, updateHud, banner, toast, hurtFlash, bumpWallet, showOver, bindKeys, bindButtons, refreshAfterCoop, handleInvite,
     applySettings, refreshTitle, drawTitleShip, confirmBox, getScreen, isHangarFromFlight,
   };
 })();
@@ -532,9 +639,11 @@ const Tree = (() => {
     $('autoBuyBox').checked = !!S.autoBuy;
 
     const flying = Game.isFlying();
-    $('btnTreePlay').textContent = flying ? 'REPRENDRE' : 'DECOLLER';
+    const waitHost = !flying && Coop.role === 'guest';
+    $('btnTreePlay').disabled = waitHost;
+    $('btnTreePlay').textContent = flying ? 'REPRENDRE' : waitHost ? "ATTENTE DE L'HOTE" : 'DECOLLER';
     const maxS = maxStartSector();
-    const showPick = !flying && maxS > 1;
+    const showPick = !flying && maxS > 1 && !waitHost;
     $('sectorPick').hidden = !showPick;
     if (showPick) {
       S.startSector = clamp(S.startSector, 1, maxS);
@@ -665,8 +774,11 @@ const Tree = (() => {
 
   function renderHyper() {
     const gain = hyperGain();
-    const ready = hyperReady();
-    const txt = ready
+    const inFlightTogether = Coop.role && Game.isFlying();
+    const ready = hyperReady() && !inFlightTogether;
+    const txt = inFlightTogether
+      ? "Impossible pendant un vol à deux : attends la fin de la partie."
+      : ready
       ? `Détruis tout l'arbre (pas la Constellation) et repars du secteur 1, plus fort. Tu gagnes <b style="color:var(--dark)">✦ ${fmt(gain)}</b>.`
       : `Vaincs le boss du secteur 10 pour l'activer. Record actuel : secteur ${S.best}.`;
     return `<div class="hyper-card"><h3>HYPERSAUT</h3><p>${txt}</p><button id="npHyper" class="btn ${ready ? 'primary' : ''} small" ${ready ? '' : 'disabled'}>LANCER L'HYPERSAUT</button></div>`;
@@ -935,6 +1047,7 @@ const Tree = (() => {
   UI.bindButtons();
   UI.applySettings();
   UI.setScreen('title');
+  UI.handleInvite();
 
   // Revenu hors ligne
   const away = claimOffline();
@@ -962,20 +1075,30 @@ const Tree = (() => {
   setInterval(() => Save.write(), 10000);
 
   let last = performance.now();
-  function frame(now) {
+  function advance(now) {
     const dt = Math.min((now - last) / 1000, 0.25);
     last = now;
     const scr = UI.getScreen();
     if (scr === 'hangar') {
       Tree.draw(dt);
     } else {
-      Game.frame(dt, scr === 'fly');
+      Game.frame(dt, scr === 'fly' && !Coop.blocked());
       if (scr === 'fly' || scr === 'pause') UI.updateHud(dt);
       if (scr === 'title') UI.drawTitleShip();
     }
+    Coop.tick(dt);
+  }
+  function frame(now) {
+    advance(now);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // À deux, la partie continue même si le navigateur cesse de dessiner cette fenêtre.
+  setInterval(() => {
+    const now = performance.now();
+    if (Coop.role && now - last > 200) advance(now);
+  }, 50);
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker :', err));

@@ -493,3 +493,48 @@ body.no-crt #crt { display: none; }
   .panel-box h2 { margin-bottom: 10px; font-size: 14px; }
   .stat-grid { font-size: 19px; margin-bottom: 8px; }
 }
+
+/* ---------- Jouer à deux ---------- */
+.join-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.join-row label { color: var(--muted); }
+#joinCode {
+  font-family: var(--title);
+  font-size: 16px;
+  width: 104px;
+  padding: 10px 8px;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: #05060f;
+  border: 0;
+  box-shadow: inset 0 0 0 2px var(--line-hi);
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: manipulation;
+}
+#joinCode:focus { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.lobby-code {
+  font-family: var(--title);
+  font-size: clamp(30px, 9vw, 44px);
+  letter-spacing: 8px;
+  text-align: center;
+  color: var(--gold);
+  margin: 0 0 18px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.lobby-error { color: var(--red) !important; min-height: 0; }
+.lobby-error:empty, #lobbyStatus:empty { display: none; }
+#lobby .menu { margin-top: 12px; }
+.over-leave { width: 100%; margin-top: 10px; }
+.bar-tag.mate-tag { color: #ff9d2e; }
+.bar.mate { height: 8px; }
+.bar.mate i { background: linear-gradient(to bottom, #ffd9a0 0 30%, #ff9d2e 30% 100%); }
+.bar.mate.down i { background: #5c5c80; }
+#coopStatus {
+  margin-top: 8px;
+  font-family: var(--body);
+  font-size: 23px;
+  color: #fff;
+  text-shadow: 2px 2px 0 #000;
+}

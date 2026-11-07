@@ -24,6 +24,7 @@
     <div class="hud-left">
       <div class="bar-line"><span class="bar-tag">COQUE</span><div class="bar hull"><i id="hullFill"></i></div><span id="hullText" class="bar-num"></span></div>
       <div class="bar-line" id="shieldLine" hidden><span class="bar-tag">BOUCL.</span><div class="bar shield"><i id="shieldFill"></i></div><span id="shieldText" class="bar-num"></span></div>
+      <div class="bar-line" id="mateLine" hidden><span class="bar-tag mate-tag">ALLIE</span><div class="bar mate"><i id="mateFill"></i></div><span id="mateText" class="bar-num"></span></div>
       <div class="sector-line">
         <span id="sectorText"></span>
         <div class="bar progress"><i id="progFill"></i></div>
@@ -47,6 +48,7 @@
     <div id="hudBottom">
       <span id="comboText"></span>
       <span id="frenzyText"></span>
+      <div id="coopStatus" hidden></div>
     </div>
   </div>
   <button id="dashBtn" hidden>SAUT</button>
@@ -63,6 +65,7 @@
       <p class="tagline">Ils arrivent de partout. Chaque épave te rend plus fort.</p>
       <div class="menu">
         <button id="btnPlay" class="btn primary">DECOLLER</button>
+        <button id="btnTitleCoop" class="btn">JOUER A DEUX EN LIGNE</button>
         <button id="btnTitleTree" class="btn">ARBRE DE COMPETENCES</button>
         <button id="btnTitleOptions" class="btn">OPTIONS</button>
       </div>
@@ -93,6 +96,43 @@
       <div class="menu row">
         <button id="btnOverTree" class="btn">ARBRE</button>
         <button id="btnOverPlay" class="btn primary">REDECOLLER</button>
+      </div>
+      <button id="btnOverLeave" class="btn danger over-leave" hidden>QUITTER LA PARTIE A DEUX</button>
+    </div>
+  </section>
+
+  <!-- ===== Jouer à deux ===== -->
+  <section id="lobby" class="screen dim" hidden>
+    <div class="panel-box wide">
+      <h2>JOUER A DEUX</h2>
+
+      <div id="lobbyChoice">
+        <p>L'un crée la partie, l'autre la rejoint avec le code. Vous coopérez contre les mêmes ennemis, et chacun garde sa propre progression.</p>
+        <div class="menu">
+          <button id="btnCoopHost" class="btn primary">CREER UNE PARTIE</button>
+        </div>
+        <div class="join-row">
+          <label for="joinCode">Code reçu :</label>
+          <input id="joinCode" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" />
+          <button id="btnCoopJoin" class="btn">REJOINDRE</button>
+        </div>
+      </div>
+
+      <div id="lobbyHost" hidden>
+        <p id="lobbyHostText"></p>
+        <div id="lobbyCode" class="lobby-code"></div>
+        <div class="menu row">
+          <button id="btnCopyLink" class="btn">COPIER LE LIEN</button>
+        </div>
+      </div>
+
+      <p id="lobbyStatus" class="hint"></p>
+      <p id="lobbyError" class="lobby-error"></p>
+
+      <div class="menu">
+        <button id="btnCoopStart" class="btn primary" hidden>DECOLLER ENSEMBLE</button>
+        <button id="btnCoopTree" class="btn" hidden>ARBRE DE COMPETENCES</button>
+        <button id="btnCoopBack" class="btn danger">RETOUR</button>
       </div>
     </div>
   </section>
@@ -164,6 +204,8 @@
   <script src="js/sprites.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/game.js"></script>
+  <script src="js/vendor/peerjs.min.js"></script>
+  <script src="js/coop.js"></script>
   <script src="js/ui.js"></script>
 </body>
 </html>
