@@ -542,3 +542,7 @@ body.no-crt #crt { display: none; }
 /* Choix du secteur de départ sur l'écran de bilan */
 .over-pick { justify-content: center; margin: 0 0 14px; }
 #overSecValue { font-size: 22px; color: var(--gold); min-width: 110px; text-align: center; }
+
+/* Son */
+.btn.muted-btn { color: var(--red); }
+.sound-status { font-size: 18px !important; color: var(--muted) !important; text-align: left !important; margin: 6px 2px 0 !important; }

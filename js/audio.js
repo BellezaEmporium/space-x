@@ -11,11 +11,24 @@ const Audio8 = (() => {
   let noiseBuf = null;
   const last = {};
 
+  /* Crée le son au premier geste, puis le réveille à chaque geste s'il s'est endormi
+     (onglet changé, appel reçu, retour en arrière…). */
   function init() {
-    if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+    if (ac) {
+      if (ac.state !== 'running' && !document.hidden) ac.resume().catch(() => {});
+      return;
+    }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
+    // iPhone : sans ceci, le bouton silencieux du téléphone coupe tout le son du jeu.
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (err) { /* non pris en charge */ }
     ac = new AC();
+    // Un son vide joué pendant le geste débloque l'audio sur les navigateurs mobiles.
+    const unlock = ac.createBufferSource();
+    unlock.buffer = ac.createBuffer(1, 1, 22050);
+    unlock.connect(ac.destination);
+    unlock.start(0);
+    if (ac.state !== 'running') ac.resume().catch(() => {});
     master = ac.createGain();
     master.gain.value = 0.5;
     master.connect(ac.destination);
@@ -32,8 +45,8 @@ const Audio8 = (() => {
 
   function applySettings() {
     if (!ac) return;
-    sfxBus.gain.value = S.set.sound ? 1 : 0;
-    musicBus.gain.value = S.set.music ? MUSIC_LEVEL : 0;
+    sfxBus.gain.value = S.set.sound ? (S.set.sfxVol || 100) / 100 : 0;
+    musicBus.gain.value = S.set.music ? MUSIC_LEVEL * (S.set.musicVol || 100) / 100 : 0;
     Music.refresh();
   }
 
@@ -45,6 +58,28 @@ const Audio8 = (() => {
   }
   document.addEventListener('visibilitychange', silenceInBackground);
   window.addEventListener('pagehide', () => { if (ac) ac.suspend(); });
+  window.addEventListener('pageshow', () => { if (ac && !document.hidden) ac.resume().catch(() => {}); });
+  for (const type of ['pointerdown', 'keydown', 'touchend']) {
+    window.addEventListener(type, () => init(), { capture: true, passive: true });
+  }
+
+  /* État du son, affiché dans les options pour comprendre un silence. */
+  function status() {
+    const supported = !!(window.AudioContext || window.webkitAudioContext);
+    let engine = 'pas encore démarré (touche l\'écran ou une touche)';
+    if (!supported) engine = 'non pris en charge par ce navigateur';
+    else if (ac) engine = ac.state === 'running' ? 'actif' : `en veille (${ac.state})`;
+    return { supported, running: !!ac && ac.state === 'running', engine };
+  }
+
+  /* Petit test audible : un accord sur les bruitages, puis une basse sur la musique. */
+  function test() {
+    init();
+    if (!ac) return;
+    const t = ac.currentTime + 0.05;
+    [523, 659, 784].forEach((f, i) => tone(f, 0.25, 'square', 0.12, null, sfxBus, t + i * 0.12));
+    [55, 82.4, 110].forEach((f, i) => tone(f, 0.45, 'sawtooth', 0.35, null, musicBus, t + 0.45 + i * 0.3));
+  }
 
   function tone(freq, dur, type, vol, slide, bus, when) {
     if (!ac) return;
@@ -123,5 +158,5 @@ const Audio8 = (() => {
     },
   };
 
-  return { init, fx, applySettings, context: () => ac, musicOut: () => musicBus };
+  return { init, fx, applySettings, status, test, context: () => ac, musicOut: () => musicBus };
 })();

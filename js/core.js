@@ -44,7 +44,7 @@ const defaultSave = () => ({
   autoBuy: false,
   seenHelp: false,
   lastSeen: Date.now(),
-  set: { sound: true, music: true, aim: 'auto', shake: true, crt: true, nums: true },
+  set: { sound: true, music: true, musicVol: 100, sfxVol: 100, aim: 'auto', shake: true, crt: true, nums: true },
 });
 
 let S = defaultSave();

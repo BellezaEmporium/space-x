@@ -1,4 +1,4 @@
-const CACHE_NAME = 'space-x-v6';
+const CACHE_NAME = 'space-x-v7';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -33,11 +33,15 @@ self.addEventListener('activate', event => {
   );
 });
 
-/* Réseau d'abord pour profiter des mises à jour, cache si hors ligne. */
+/* Réseau d'abord pour profiter des mises à jour, cache si hors ligne.
+   Les fichiers du jeu sont toujours revérifiés auprès du serveur : sinon le
+   navigateur peut garder une ancienne version jusqu'à 10 minutes. */
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  const sameSite = new URL(event.request.url).origin === self.location.origin;
+  if (!sameSite) return; // le service de connexion en ligne passe sans intermédiaire
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then(res => {
         if (res.ok) {
           const copy = res.clone();

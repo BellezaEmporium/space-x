@@ -236,6 +236,7 @@ const UI = (() => {
     if (S.ascensions > 0) parts.push(`${S.ascensions} hypersaut${S.ascensions > 1 ? 's' : ''}`);
     const owned = NODES.filter(n => rank(n) > 0).length;
     if (owned) parts.push(`${owned}/${NODES.length} compétences`);
+    if (!S.set.sound && !S.set.music) parts.push('SON COUPÉ : touche M ou Options');
     $('titleStats').textContent = parts.join('  ·  ');
     $('btnPlay').textContent = S.runs > 0 ? 'REDECOLLER' : 'DECOLLER';
   }
@@ -260,7 +261,9 @@ const UI = (() => {
   /* ---------- Options ---------- */
   const OPTIONS = [
     { key: 'sound', label: 'Bruitages' },
-    { key: 'music', label: 'Musique' },
+    { key: 'sfxVol', label: 'Volume des bruitages', values: [[25, '25 %'], [50, '50 %'], [75, '75 %'], [100, '100 %'], [150, '150 %']] },
+    { key: 'music', label: 'Musique (en vol seulement)' },
+    { key: 'musicVol', label: 'Volume de la musique', values: [[25, '25 %'], [50, '50 %'], [75, '75 %'], [100, '100 %'], [150, '150 %']] },
     { key: 'aim', label: 'Visée', values: [['auto', 'Automatique'], ['mouse', 'Souris']] },
     { key: 'shake', label: "Tremblements de l'écran" },
     { key: 'crt', label: 'Effet écran cathodique' },
@@ -273,7 +276,8 @@ const UI = (() => {
       const b = document.createElement('button');
       b.className = 'opt';
       const val = S.set[o.key];
-      const text = o.values ? o.values.find(v => v[0] === val)[1] : val ? 'OUI' : 'NON';
+      const found = o.values && (o.values.find(v => v[0] === val) || o.values[o.values.length - 2]);
+      const text = o.values ? found[1] : val ? 'OUI' : 'NON';
       const off = !o.values && !val;
       b.innerHTML = `<span>${o.label}</span><b class="${off ? 'off' : ''}">${text}</b>`;
       b.onclick = () => {
@@ -289,8 +293,37 @@ const UI = (() => {
       };
       box.appendChild(b);
     }
+    // Test du son : joue quelque chose et dit ce que fait le navigateur.
+    const test = document.createElement('button');
+    test.className = 'opt';
+    test.innerHTML = '<span>Tester le son</span><b>JOUER</b>';
+    test.onclick = () => {
+      Audio8.test();
+      setTimeout(renderSoundStatus, 150);
+    };
+    box.appendChild(test);
+    const info = document.createElement('p');
+    info.id = 'soundStatus';
+    info.className = 'sound-status';
+    box.appendChild(info);
+    renderSoundStatus();
+  }
+  function renderSoundStatus() {
+    const el = $('soundStatus');
+    if (!el) return;
+    const st = Audio8.status();
+    const parts = [`Son du navigateur : ${st.engine}`];
+    if (!S.set.sound && !S.set.music) parts.push('Tout est coupé : touche M ou les options ci-dessus.');
+    parts.push("Si tu n'entends rien en jouant le test : vérifie le volume de l'appareil, et sur iPhone le bouton silencieux.");
+    el.textContent = parts.join(' — ');
+  }
+  function refreshSoundButton() {
+    const muted = !S.set.sound && !S.set.music;
+    $('btnHudSound').textContent = muted ? 'MUET' : 'SON';
+    $('btnHudSound').classList.toggle('muted-btn', muted);
   }
   function applySettings() {
+    refreshSoundButton();
     document.body.classList.toggle('no-crt', !S.set.crt);
     Audio8.applySettings();
   }
@@ -329,7 +362,8 @@ const UI = (() => {
         S.set.music = !S.set.music;
         S.set.sound = S.set.music;
         applySettings();
-        toast(S.set.sound ? 'Son activé' : 'Son coupé');
+        refreshSoundButton();
+        toast(S.set.sound ? 'Son activé' : 'Son coupé (touche M pour le remettre)');
       } else if (e.code === 'Enter') {
         if (screen === 'over' || screen === 'title') launch();
       }
@@ -396,6 +430,15 @@ const UI = (() => {
       });
     });
     on('btnHudPause', pause);
+    on('btnHudSound', () => {
+      const on = !(S.set.sound || S.set.music);
+      S.set.sound = on;
+      S.set.music = on;
+      applySettings();
+      refreshSoundButton();
+      Save.write();
+      toast(on ? 'Son activé' : 'Son coupé');
+    });
     on('btnTreeBack', closeHangar);
     on('btnTreePlay', launch);
     on('tabShip', () => Tree.setTree('ship'));
