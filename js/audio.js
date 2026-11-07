@@ -1,5 +1,8 @@
 'use strict';
 /* Son 100% synthétisé : aucun fichier audio à charger. */
+// Volume de la musique : assez fort pour bien s'entendre par-dessus les bruitages.
+const MUSIC_LEVEL = 1;
+
 const Audio8 = (() => {
   let ac = null;
   let master = null;
@@ -19,7 +22,7 @@ const Audio8 = (() => {
     sfxBus = ac.createGain();
     sfxBus.connect(master);
     musicBus = ac.createGain();
-    musicBus.gain.value = 0.4;
+    musicBus.gain.value = MUSIC_LEVEL;
     musicBus.connect(master);
     noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -30,7 +33,7 @@ const Audio8 = (() => {
   function applySettings() {
     if (!ac) return;
     sfxBus.gain.value = S.set.sound ? 1 : 0;
-    musicBus.gain.value = S.set.music ? 0.4 : 0;
+    musicBus.gain.value = S.set.music ? MUSIC_LEVEL : 0;
     Music.refresh();
   }
 

@@ -48,7 +48,7 @@ const Music = (() => {
 
   /* Déroulé d'un morceau : chaque section dit quels instruments jouent. */
   const FLIGHT_FORM = [
-    { bars: 4, pad: 1, hat: 1 },
+    { bars: 2, pad: 1, hat: 1, bass: 1, sub: 1 },  // intro courte : on entend tout de suite la basse
     { bars: 8, pad: 1, hat: 1, kick: 1, snare: 1, bass: 1, arp: 1, sub: 1 },
     { bars: 8, hat: 1, kick: 1, snare: 1, bass: 1, arp: 1, lead: 1, sub: 1 },
     { bars: 4, pad: 1, sub: 1, riser: 1 },
@@ -332,7 +332,7 @@ const Music = (() => {
     function playPad(t, chord, bars = 1) {
       const dur = stepDur * 16 * bars;
       for (const midi of [note(chord, 2), note(chord + 2, 2), note(chord + 4, 2)]) {
-        synth(t, midi, dur, { voices: [{ type: 'sawtooth', detune: -9 }, { type: 'triangle', detune: 7 }], vol: 0.035, filter: 900, attack: 0.4, release: 0.8 });
+        synth(t, midi, dur, { voices: [{ type: 'sawtooth', detune: -9 }, { type: 'triangle', detune: 7 }], vol: 0.055, filter: 1100, attack: 0.3, release: 0.8 });
       }
     }
     function playStab(t, chord) {
@@ -343,7 +343,7 @@ const Music = (() => {
     function playAlarm(t, s16) {
       if (s16 % 8 !== 0) return;
       const high = s16 === 0;
-      synth(t, song.root + 36 + (high ? 7 : 0), stepDur * 7, { type: 'square', vol: 0.05, filter: 2400, slideTo: song.root + 36 + (high ? 0 : 7), release: 0.05, send: 0.3 });
+      synth(t, song.root + 36 + (high ? 7 : 0), stepDur * 7, { type: 'square', vol: 0.07, filter: 2400, slideTo: song.root + 36 + (high ? 0 : 7), release: 0.05, send: 0.3 });
     }
     function riser(t, bars) {
       const s = ac.createBufferSource();
@@ -420,7 +420,8 @@ const Music = (() => {
 
     return {
       song,
-      start(t) {
+      start(t, skipIntro) {
+        if (skipIntro) section = 1; // en cours de vol, on enchaîne directement sur le morceau
         nextTime = t;
         started = true;
         bus.gain.cancelScheduledValues(t);
@@ -487,20 +488,22 @@ const Music = (() => {
     }
   }
 
-  function switchTo(song, seed) {
+  function switchTo(song, seed, skipIntro) {
     const eng = ensureEngine();
     if (!eng) return;
     if (player && player.song === song) return;
     const ac = eng.ac;
     if (player) player.stop(ac.currentTime);
     player = makePlayer(eng, song, seed);
-    player.start(ac.currentTime + 0.35);
+    player.start(ac.currentTime + 0.35, skipIntro);
     refresh();
   }
 
   /* Un morceau de vol différent à chaque secteur. */
   function flight(sector) {
-    switchTo(FLIGHT[(session + sector - 1) % FLIGHT.length], sector);
+    // Le premier morceau d'un vol a son intro ; ensuite on enchaîne sans temps mort.
+    const midFlight = !!player;
+    switchTo(FLIGHT[(session + sector - 1) % FLIGHT.length], sector, midFlight);
   }
   function boss(sector) {
     switchTo(BOSSES[(session + sector) % BOSSES.length], sector);
@@ -524,7 +527,7 @@ const Music = (() => {
     const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     const ac = new Offline(1, Math.ceil(seconds * sampleRate), sampleRate);
     const out = ac.createGain();
-    out.gain.value = 0.32;
+    out.gain.value = MUSIC_LEVEL * 0.5; // même chaîne que dans le jeu : bus musique puis volume général
     out.connect(ac.destination);
     const eng = createEngine(ac, out);
     const p = makePlayer(eng, song, 1);
