@@ -11,7 +11,7 @@
    PeerJS ne sert qu'à se trouver grâce au code de partie.
    ===================================================================== */
 const Coop = (() => {
-  const PROTOCOL = 1;
+  const PROTOCOL = 2;
   const PREFIX = 'spacex-coop-v1-';
   const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const CODE_LENGTH = 4;
@@ -348,9 +348,9 @@ const Coop = (() => {
       for (const c of patches) { wx(c.x); wy(c.y); w8(Math.round(clamp(c.life, 0, 2.5) * 100)); }
     }
 
-    const boss = n.boss;
-    w16(boss ? boss.nid : 0);
-    if (boss) {
+    w8(n.bosses.length);
+    for (const boss of n.bosses) {
+      w16(boss.nid);
       wf(boss.hp); wf(boss.maxHp);
       w8(boss.state || 0);
       wi8((boss.cx || 0) * 100); wi8((boss.cy || 0) * 100);
@@ -570,15 +570,18 @@ const Coop = (() => {
     }
     lastSnapAt = now;
 
-    const bossId = r16();
-    let bossData = null;
-    if (bossId) bossData = { hp: rf(), maxHp: rf(), state: r8(), cx: ri8() / 100, cy: ri8() / 100 };
+    const bossData = new Map();
+    const bossCount = r8();
+    for (let i = 0; i < bossCount; i++) {
+      const nid = r16();
+      bossData.set(nid, { hp: rf(), maxHp: rf(), state: r8(), cx: ri8() / 100, cy: ri8() / 100 });
+    }
 
     const enemyCount = r16();
     const list = n.enemies;
     list.length = 0;
     const seen = new Set();
-    let bossObj = null;
+    const bossList = [];
     for (let i = 0; i < enemyCount; i++) {
       const nid = r16(), ty = r8(), x = rx(), y = ry(), ang = ra(), fl = r8(), hp = r8();
       let e = enemyCache.get(nid);
@@ -595,18 +598,15 @@ const Coop = (() => {
       e.hp = hp; e.maxHp = 255;
       seen.add(nid);
       list.push(e);
-      if (e.boss) bossObj = e;
+      if (e.boss) bossList.push(e);
     }
     for (const nid of enemyCache.keys()) if (!seen.has(nid)) enemyCache.delete(nid);
 
-    if (bossObj && bossData) {
-      bossObj.hp = bossData.hp;
-      bossObj.maxHp = bossData.maxHp;
-      bossObj.state = bossData.state;
-      bossObj.cx = bossData.cx;
-      bossObj.cy = bossData.cy;
+    for (const boss of bossList) {
+      const data = bossData.get(boss.nid);
+      if (data) Object.assign(boss, data);
     }
-    n.boss = bossObj;
+    n.bosses = bossList;
 
     const pb = n.pBullets;
     pb.length = 0;

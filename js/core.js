@@ -253,6 +253,7 @@ function spend(cur, amount) {
   else S.dm -= amount;
 }
 function isUnlocked(n) {
+  if (n.asc && S.ascensions < n.asc) return false;
   if (!n.parents.length) return true;
   return n.all ? n.parents.every(p => rank(p) > 0) : n.parents.some(p => rank(p) > 0);
 }
@@ -298,12 +299,14 @@ function autoBuyTick() {
 }
 
 /* ---------- Hypersaut ---------- */
-const HYPER_SECTOR = 11; // il faut avoir vaincu le boss du secteur 10
+const HYPER_BOSS_SECTOR = 3; // il faut avoir vaincu le boss de ce secteur
+const HYPER_SECTOR = HYPER_BOSS_SECTOR + 1;
 function hyperReady() { return S.best >= HYPER_SECTOR; }
 function hyperGain() {
   if (!hyperReady()) return 0;
   const base = Math.sqrt(S.ascUnits / 4000) + (S.best - HYPER_SECTOR) * 1.5;
-  return Math.max(1, Math.floor(base * STATS.dmMul));
+  // Au moins 2 ✦ : de quoi toujours acheter une première case de la Constellation.
+  return Math.max(2, Math.floor(base * STATS.dmMul));
 }
 function doHyper() {
   const gain = hyperGain();

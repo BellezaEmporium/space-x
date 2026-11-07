@@ -150,7 +150,7 @@ function polar(r, lat, angleDeg, base, step) {
 /* N(branche, id, r, lat, icône, nom, options)
    options : max (rangs, 0 = infini), eff, req, all, kind ('k' clé de voûte, 'n' notable),
              core (coût en noyaux), c (multiplicateur de coût), g (croissance),
-             desc (texte libre), noAuto (exclu de l'auto-achat) */
+             desc (texte libre), noAuto (exclu de l'auto-achat), asc (hypersauts requis) */
 function N(b, id, r, lat, icon, name, o) {
   const branch = BRANCHES[b];
   const pos = polar(r, lat, branch.angle, 120, 105);
@@ -186,6 +186,7 @@ function pushNode({ tree, id, b, r, x, y, icon, name, o }) {
     g: o.g || (max === 0 ? 1.6 : max <= 3 ? 2.2 : max <= 6 ? 1.55 : 1.38),
     desc: o.desc || '',
     noAuto: !!o.noAuto,
+    asc: o.asc || 0,       // nombre d'hypersauts à avoir faits pour y accéder
   };
   NODES.push(node);
   NODE_BY_ID[id] = node;
@@ -402,6 +403,132 @@ C(5, 'zs2', 2, -1, 'missile', 'Armes héritées', { kind: 'k', cost: 6, eff: { m
 C(5, 'zs3', 2, 1, 'drone', 'Escorte fidèle', { kind: 'k', cost: 6, eff: { drones: 1 }, req: ['zs1'], desc: 'Un drone de plus, pour toujours.' });
 C(5, 'zs4', 3, 0, 'arc', 'Foudre apprivoisée', { kind: 'k', cost: 10, eff: { arc: 1 }, req: ['zs2', 'zs3'], desc: "L'arc électrique reste installé pour toujours." });
 C(5, 'zs5', 4, 0, 'hyper', 'Conscience du vide', { max: 0, eff: { dmP: 25 }, req: ['zs4'] });
+
+/* =====================================================================
+   ARBRE PROFOND : ces compétences n'ouvrent qu'après un ou deux hypersauts.
+   ===================================================================== */
+const ASC1 = 1, ASC2 = 2;
+
+/* ---------- Armement ---------- */
+N(0, 'a21', 9, -2, 'dmg', 'Obus à uranium', { asc: ASC1, max: 10, eff: { dmgP: 30 }, req: ['a20', 'a18'] });
+N(0, 'a22', 9, 2, 'rate', 'Culasse rotative', { asc: ASC1, max: 10, eff: { rateP: 8 }, req: ['a20', 'a19'] });
+N(0, 'a23', 10, -2, 'crit', 'Télémétrie quantique', { asc: ASC1, max: 10, eff: { critM: 25 }, req: ['a21'] });
+N(0, 'a24', 10, 0, 'gun', 'Salve quintuple', { asc: ASC1, kind: 'k', core: 30, eff: { proj: 1 }, req: ['a21', 'a22'], desc: 'Ajoute un obus à chaque salve.' });
+N(0, 'a25', 10, 2, 'pierce', 'Perforants lourds', { asc: ASC1, kind: 'n', max: 3, eff: { pierce: 1 }, req: ['a22'] });
+N(0, 'a26', 11, -1, 'bounce', 'Ricochet dirigé', { asc: ASC2, kind: 'n', max: 3, eff: { ricochet: 1 }, req: ['a23', 'a24'] });
+N(0, 'a27', 11, 1, 'exec', 'Coup de grâce', { asc: ASC2, max: 5, eff: { execP: 40 }, req: ['a24', 'a25'] });
+N(0, 'a28', 12, 0, 'gun', 'Salve sextuple', { asc: ASC2, kind: 'k', core: 60, eff: { proj: 1 }, req: ['a26', 'a27'], desc: 'Ajoute un obus à chaque salve.' });
+
+/* ---------- Missiles ---------- */
+N(1, 'm18', 9, -2, 'dmg', 'Ogive à antimatière', { asc: ASC1, max: 10, eff: { missileDmgP: 30 }, req: ['m17'] });
+N(1, 'm19', 9, 2, 'dmg', 'Mines à antimatière', { asc: ASC1, max: 10, eff: { mineDmgP: 30 }, req: ['m17'] });
+N(1, 'm20', 10, -2, 'cd', 'Silo automatique', { asc: ASC1, max: 8, eff: { missileCdP: 3 }, req: ['m18'] });
+N(1, 'm21', 10, 0, 'missile', 'Batterie stratégique', { asc: ASC1, kind: 'k', core: 30, eff: { missileN: 2 }, req: ['m18', 'm19'] });
+N(1, 'm22', 10, 2, 'mine', 'Mines en essaim', { asc: ASC1, kind: 'n', max: 3, eff: { mineN: 1 }, req: ['m19'] });
+N(1, 'm23', 11, -1, 'nuke', 'Frappe thermique', { asc: ASC2, max: 5, eff: { nuke: 6 }, req: ['m20', 'm21'] });
+N(1, 'm24', 11, 1, 'cluster', 'Bombes à sous-munitions', { asc: ASC2, kind: 'n', max: 3, eff: { clusterN: 2 }, req: ['m21', 'm22'] });
+N(1, 'm25', 12, 0, 'radius', 'Souffle stellaire', { asc: ASC2, kind: 'k', core: 60, eff: { missileRadP: 60, mineRadP: 60 }, req: ['m23', 'm24'] });
+
+/* ---------- Énergie ---------- */
+N(2, 'e19', 9, -2, 'dmg', 'Foudre globulaire', { asc: ASC1, max: 10, eff: { arcDmgP: 30 }, req: ['e18', 'e16'] });
+N(2, 'e20', 9, 2, 'dmg', 'Nova stellaire', { asc: ASC1, max: 10, eff: { novaDmgP: 30 }, req: ['e18', 'e15'] });
+N(2, 'e21', 10, -2, 'chain', "Réseau d'éclairs", { asc: ASC1, max: 6, eff: { arcChain: 1 }, req: ['e19'] });
+N(2, 'e22', 10, 0, 'beam', 'Rayon lourd', { asc: ASC1, kind: 'k', core: 30, eff: { beamW: 2, beamDmgP: 100 }, req: ['e19', 'e20'] });
+N(2, 'e23', 10, 2, 'radius', 'Nova géante', { asc: ASC1, max: 8, eff: { novaRadP: 10 }, req: ['e20'] });
+N(2, 'e24', 11, -1, 'arc', 'Tempête', { asc: ASC2, kind: 'n', max: 2, eff: { arcBolts: 1 }, req: ['e21', 'e22'] });
+N(2, 'e25', 11, 1, 'cd', 'Réacteur à fusion', { asc: ASC2, max: 8, eff: { novaCdP: 3, arcCdP: 3 }, req: ['e22', 'e23'] });
+N(2, 'e26', 12, 0, 'range', 'Lance-soleil', { asc: ASC2, kind: 'k', core: 60, eff: { beamLenP: 60, beamDmgP: 100 }, req: ['e24', 'e25'] });
+
+/* ---------- Drones ---------- */
+N(3, 'd19', 9, -2, 'dmg', "Canons d'escorte", { asc: ASC1, max: 10, eff: { droneDmgP: 30 }, req: ['d17'] });
+N(3, 'd20', 9, 2, 'rate', 'Noyau de calcul', { asc: ASC1, max: 10, eff: { droneRateP: 8 }, req: ['d17'] });
+N(3, 'd21', 10, -2, 'range', 'Sondes lointaines', { asc: ASC1, max: 6, eff: { droneRangeP: 10 }, req: ['d19'] });
+N(3, 'd22', 10, 0, 'drone', 'Sixième drone', { asc: ASC1, kind: 'k', core: 30, eff: { drones: 1 }, req: ['d19', 'd20'] });
+N(3, 'd23', 10, 2, 'orbit', 'Lames lourdes', { asc: ASC1, max: 5, eff: { droneRam: 1 }, req: ['d20'] });
+N(3, 'd24', 11, -1, 'dmg', "Essaim d'élite", { asc: ASC2, max: 10, eff: { droneDmgP: 40 }, req: ['d21', 'd22'] });
+N(3, 'd25', 11, 1, 'heal', 'Nuée réparatrice', { asc: ASC2, max: 5, eff: { droneRegen: 0.04 }, req: ['d22', 'd23'] });
+N(3, 'd26', 12, 0, 'drone', 'Septième drone', { asc: ASC2, kind: 'k', core: 60, eff: { drones: 1 }, req: ['d24', 'd25'] });
+
+/* ---------- Blindage ---------- */
+N(4, 'b20', 9, -2, 'hull', 'Cuirasse de neutrons', { asc: ASC1, max: 10, eff: { hullP: 40 }, req: ['b19'] });
+N(4, 'b21', 9, 2, 'armor', 'Plaques de plasma', { asc: ASC1, max: 10, eff: { armor: 10 }, req: ['b19'] });
+N(4, 'b22', 10, -2, 'shield', 'Bouclier stellaire', { asc: ASC1, max: 10, eff: { shieldP: 30 }, req: ['b20'] });
+N(4, 'b23', 10, 0, 'revive', 'Troisième capsule', { asc: ASC1, kind: 'k', core: 40, eff: { revive: 1 }, req: ['b20', 'b21'] });
+N(4, 'b24', 10, 2, 'dodge', 'Furtivité', { asc: ASC1, max: 5, eff: { dodge: 2 }, req: ['b21'] });
+N(4, 'b25', 11, -1, 'regen', 'Réparateurs quantiques', { asc: ASC2, max: 5, eff: { regen: 0.1 }, req: ['b22', 'b23'] });
+N(4, 'b26', 11, 1, 'repair', 'Recyclage', { asc: ASC2, max: 5, eff: { repairKill: 0.02 }, req: ['b23', 'b24'] });
+N(4, 'b27', 12, 0, 'hull', 'Forteresse', { asc: ASC2, kind: 'k', core: 60, eff: { hullP: 200 }, req: ['b25', 'b26'] });
+
+/* ---------- Propulsion ---------- */
+N(5, 'p18', 9, -2, 'speed', 'Réacteurs à plasma', { asc: ASC1, max: 10, eff: { speedP: 2 }, req: ['p17'] });
+N(5, 'p19', 9, 2, 'cd', 'Saut instantané', { asc: ASC1, max: 8, eff: { dashCdP: 4 }, req: ['p17'] });
+N(5, 'p20', 10, -2, 'trail', 'Plasma stellaire', { asc: ASC1, max: 10, eff: { trailDmgP: 40 }, req: ['p18'] });
+N(5, 'p21', 10, 0, 'charge', 'Saut de réserve', { asc: ASC1, kind: 'k', core: 30, eff: { dashCharges: 1 }, req: ['p18', 'p19'] });
+N(5, 'p22', 10, 2, 'dmg', "Éperon d'acier", { asc: ASC1, max: 10, eff: { dashDmgP: 50 }, req: ['p19'] });
+N(5, 'p23', 11, -1, 'speed', 'Énergie relativiste', { asc: ASC2, max: 5, eff: { speedDmg: 6 }, req: ['p20', 'p21'] });
+N(5, 'p24', 11, 1, 'time', 'Réflexe de saut', { asc: ASC2, max: 5, eff: { dashReset: 4 }, req: ['p21', 'p22'] });
+N(5, 'p25', 12, 0, 'dash', 'Bond stellaire', { asc: ASC2, kind: 'k', core: 60, eff: { dashLenP: 50, allDmgP: 50 }, req: ['p23', 'p24'] });
+
+/* ---------- Collecte ---------- */
+N(6, 'c20', 9, -2, 'gain', 'Fonds interstellaire', { asc: ASC1, max: 10, eff: { gainP: 30 }, req: ['c19'] });
+N(6, 'c21', 9, 2, 'income', 'Raffinerie orbitale', { asc: ASC1, max: 10, eff: { incomeP: 50 }, req: ['c19'] });
+N(6, 'c22', 10, -2, 'lucky', 'Jackpot galactique', { asc: ASC1, max: 8, eff: { jackpot: 1 }, req: ['c20'] });
+N(6, 'c23', 10, 0, 'core', 'Mine de noyaux', { asc: ASC1, kind: 'n', max: 3, eff: { coreBoss: 2 }, req: ['c20', 'c21'] });
+N(6, 'c24', 10, 2, 'offline', 'Entrepôt géant', { asc: ASC1, max: 3, eff: { offlineH: 4 }, req: ['c21'] });
+N(6, 'c25', 11, -1, 'combo', 'Chaîne infinie', { asc: ASC2, max: 5, eff: { comboMaxP: 50 }, req: ['c22', 'c23'] });
+N(6, 'c26', 11, 1, 'cargo', 'Flotte de cargos', { asc: ASC2, max: 5, eff: { cargoP: 30 }, req: ['c23', 'c24'] });
+N(6, 'c27', 12, 0, 'interest', 'Banque centrale', { asc: ASC2, kind: 'k', core: 60, eff: { interest: 25 }, req: ['c25', 'c26'] });
+
+/* ---------- Tactique ---------- */
+N(7, 't19', 9, -2, 'boss', 'Anéantissement', { asc: ASC1, max: 10, eff: { bossP: 80 }, req: ['t18'] });
+N(7, 't20', 9, 2, 'dmg', 'Doctrine totale', { asc: ASC1, max: 10, eff: { allDmgP: 15 }, req: ['t18'] });
+N(7, 't21', 10, -2, 'slow', 'Gel tactique', { asc: ASC1, max: 3, eff: { slowAura: 5 }, req: ['t19'] });
+N(7, 't22', 10, 0, 'hyper', 'Second moteur', { asc: ASC1, kind: 'k', core: 30, eff: { dmP: 50 }, req: ['t19', 't20'] });
+N(7, 't23', 10, 2, 'elite', "Prime d'élite", { asc: ASC1, max: 10, eff: { eliteP: 40 }, req: ['t20'] });
+N(7, 't24', 11, -1, 'sector', 'Balise rapide', { asc: ASC2, max: 3, eff: { sectorShort: 4 }, req: ['t21', 't22'] });
+N(7, 't25', 11, 1, 'portal', 'Hyperportail', { asc: ASC2, max: 3, eff: { portalP: 10 }, req: ['t22', 't23'] });
+N(7, 't26', 12, 0, 'dmg', 'Commandant suprême', { asc: ASC2, kind: 'k', core: 60, eff: { allDmgP: 100 }, req: ['t24', 't25'] });
+
+/* ---------- Secondes synergies ---------- */
+bridge(0, 1, 'y1', 10.5, 'nuke', 'Salve explosive', { asc: ASC1, max: 5, eff: { explosive: 6 }, req: ['a25', 'm20'] });
+bridge(1, 2, 'y2', 10.5, 'arc', 'Frappe ionisée', { asc: ASC1, max: 5, eff: { missileDmgP: 40, arcDmgP: 40 }, req: ['m22', 'e21'] });
+bridge(2, 3, 'y3', 10.5, 'chain', 'Drones à plasma', { asc: ASC1, max: 5, eff: { droneDmgP: 40, novaDmgP: 40 }, req: ['e23', 'd21'] });
+bridge(3, 4, 'y4', 10.5, 'shield', "Égide d'essaim", { asc: ASC1, max: 5, eff: { droneRegen: 0.04, shieldP: 30 }, req: ['d23', 'b22'] });
+bridge(4, 5, 'y5', 10.5, 'armor', 'Blindage cinétique', { asc: ASC1, max: 5, eff: { armor: 10, speedDmg: 4 }, req: ['b24', 'p20'] });
+bridge(5, 6, 'y6', 10.5, 'magnet', 'Récolte éclair', { asc: ASC1, max: 5, eff: { magnetP: 30, gainP: 15 }, req: ['p22', 'c22'] });
+bridge(6, 7, 'y7', 10.5, 'gain', 'Contrats de guerre', { asc: ASC1, max: 5, eff: { bountyP: 75 }, req: ['c24', 't21'] });
+bridge(7, 0, 'y8', 10.5, 'crit', 'Visée stratégique', { asc: ASC1, max: 5, eff: { critC: 3, critM: 30 }, req: ['t23', 'a23'] });
+
+/* ---------- Constellation étendue ---------- */
+C(0, 'zf7', 5, -1.6, 'crit', 'Éclat stellaire', { max: 10, eff: { gCritC: 2 }, req: ['zf5'] });
+C(0, 'zf8', 5, 1.6, 'rate', "Cadence d'étoile", { max: 10, eff: { gRateP: 10 }, req: ['zf5'] });
+C(0, 'zf9', 6, 0, 'dmg', 'Ère du feu', { max: 10, eff: { gDmgP: 100 }, req: ['zf7', 'zf8'] });
+C(0, 'zf10', 7, 0, 'gun', 'Arsenal céleste', { kind: 'k', cost: 150, eff: { proj: 1 }, req: ['zf9'], desc: 'Un obus supplémentaire par salve, de façon permanente.' });
+
+C(1, 'zc7', 5, -1.6, 'armor', 'Peau de naine blanche', { max: 10, eff: { gArmor: 10 }, req: ['zc5'] });
+C(1, 'zc8', 5, 1.6, 'regen', 'Chaleur solaire', { max: 10, eff: { gRegen: 0.2 }, req: ['zc5'] });
+C(1, 'zc9', 6, 0, 'hull', 'Titan éternel', { max: 10, eff: { gHullP: 100 }, req: ['zc7', 'zc8'] });
+C(1, 'zc10', 7, 0, 'revive', 'Renaissance', { kind: 'k', cost: 150, eff: { gRevive: 1 }, req: ['zc9'], desc: 'Une résurrection de plus à chaque vol.' });
+
+C(2, 'zg7', 5, -1.6, 'core', 'Filon de noyaux', { max: 10, eff: { gCoreP: 30 }, req: ['zg5'] });
+C(2, 'zg8', 5, 1.6, 'income', 'Empire minier', { max: 10, eff: { gIncomeP: 100 }, req: ['zg5'] });
+C(2, 'zg9', 6, 0, 'gain', 'Âge d\'or', { max: 10, eff: { gGainP: 100 }, req: ['zg7', 'zg8'] });
+C(2, 'zg10', 7, 0, 'interest', 'Prix cassés', { kind: 'k', cost: 150, eff: { discount: 10 }, req: ['zg9'] });
+
+C(3, 'zv6', 5, -1.2, 'speed', 'Comète', { max: 5, eff: { gSpeedP: 5 }, req: ['zv5'] });
+C(3, 'zv7', 5, 1.2, 'cd', 'Temps replié', { max: 6, eff: { gCdP: 3 }, req: ['zv5'] });
+C(3, 'zv8', 6, 0, 'magnet', 'Puits gravitationnel', { max: 5, eff: { gMagnetP: 40 }, req: ['zv6', 'zv7'] });
+C(3, 'zv9', 7, 0, 'portal', 'Atlas des secteurs', { max: 3, eff: { gStart: 5 }, req: ['zv8'] });
+
+C(4, 'za6', 5, -1.2, 'analyze', 'Héritage', { max: 10, eff: { startUnits: 5000 }, req: ['za5'] });
+C(4, 'za7', 5, 1.2, 'core', 'Coffre de noyaux', { max: 10, eff: { startCores: 10 }, req: ['za5'] });
+C(4, 'za8', 6, 0, 'offline', 'Sommeil cryogénique', { max: 5, eff: { offlineH: 6 }, req: ['za6', 'za7'] });
+C(4, 'za9', 7, 0, 'income', 'Fortune familiale', { kind: 'k', cost: 120, eff: { startUnits: 100000 }, req: ['za8'] });
+
+C(5, 'zs6', 5, -1.2, 'analyze', 'Archives du vide', { max: 8, eff: { dmP: 15 }, req: ['zs4'] });
+C(5, 'zs7', 5, 1.2, 'nova', 'Nova héritée', { kind: 'k', cost: 20, eff: { nova: 1 }, req: ['zs4'], desc: "L'émetteur de nova reste installé pour toujours." });
+C(5, 'zs8', 6, 0, 'shield', 'Bouclier hérité', { kind: 'k', cost: 40, eff: { shield: 1 }, req: ['zs6', 'zs7'], desc: 'Le bouclier déflecteur reste installé pour toujours.' });
+C(5, 'zs9', 7, 0, 'beam', 'Rayon hérité', { kind: 'k', cost: 120, eff: { beam: 1 }, req: ['zs8'], desc: 'Le rayon continu reste installé pour toujours.' });
 
 /* Parents → enfants, calculés une fois pour le tracé. */
 for (const n of NODES) n.parents = n.req.map(id => NODE_BY_ID[id]);

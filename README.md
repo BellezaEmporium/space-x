@@ -13,7 +13,7 @@ Le jeu fonctionne aussi sans installation : il suffit d'ouvrir `index.html`. Sur
 | Piloter | ZQSD ou flèches | Glisser le doigt |
 | Tirer | Automatique (visée souris en option) | Automatique |
 | Saut, une fois débloqué | Espace ou Maj | Bouton SAUT |
-| Ouvrir l'arbre | Tab | Bouton ARBRE |
+| Ouvrir l'arbre, au hangar | Tab | Bouton ARBRE |
 | Pause | Échap ou P | Bouton II |
 | Couper le son | M | Menu Options |
 
@@ -25,16 +25,17 @@ Depuis le menu, choisissez **Jouer à deux en ligne** : l'un crée la partie, l'
 
 - Les ennemis sont plus nombreux et plus résistants, et chaque orbe ramassé profite aux deux joueurs.
 - Un vaisseau détruit reste à terre : son coéquipier le répare en restant près de lui 3 secondes, sinon il revient au secteur suivant. Le vol s'arrête quand les deux sont à terre.
-- Ouvrir un menu met la partie en pause pour les deux.
+- Ouvrir le menu pause arrête la partie pour les deux.
 
 La liaison est directe entre les deux appareils. Le service gratuit [PeerJS](https://peerjs.com) sert à vous mettre en relation, et ses serveurs relaient les échanges si la liaison directe est impossible : chaque appareil voit donc l'adresse IP de l'autre ou celle du relais, et certains réseaux peuvent bloquer la connexion.
 
 ## Le jeu
 
-- **Vol :** chaque secteur dure 60 secondes, puis un boss arrive. Le vaincre ouvre le secteur suivant, plus difficile.
+- **Vol :** chaque secteur dure 60 secondes, puis un boss arrive. Le vaincre ouvre le secteur suivant, plus difficile. À partir du secteur 5, les boss ont 3 fois plus de vie et attaquent 2 fois plus vite. À partir du secteur 10, deux boss arrivent en même temps.
+- **Hangar :** l'arbre ne s'améliore qu'entre deux vols, une fois détruit ou rentré au hangar.
 - **Monnaies :** les unités viennent des ennemis, les noyaux des boss et des élites, la matière noire de l'hypersaut.
-- **Arbre :** 154 compétences réparties en 8 branches (Armement, Missiles, Énergie, Drones, Blindage, Propulsion, Collecte, Tactique), avec des synergies entre branches voisines.
-- **Hypersaut :** après le boss du secteur 10, on peut remettre l'arbre à zéro contre de la matière noire. Elle se dépense dans la Constellation, 33 compétences permanentes.
+- **Arbre :** 226 compétences réparties en 8 branches (Armement, Missiles, Énergie, Drones, Blindage, Propulsion, Collecte, Tactique), avec des synergies entre branches voisines. Les plus lointaines n'ouvrent qu'après 1 ou 2 hypersauts.
+- **Hypersaut :** après le boss du secteur 3, on peut remettre l'arbre à zéro contre de la matière noire. Elle se dépense dans la Constellation, 57 compétences permanentes.
 
 La progression est enregistrée dans le navigateur.
 

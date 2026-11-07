@@ -45,8 +45,8 @@ const UI = (() => {
       S.seenHelp = true;
       const help = $('help');
       help.innerHTML = isTouch()
-        ? 'Glisse le doigt pour <b>piloter</b>. Le tir est <b>automatique</b>. Ramasse les <b>unités</b> dorées, puis dépense-les dans l\'<b>arbre</b>.'
-        : '<b>ZQSD</b> ou <b>flèches</b> pour piloter. Le tir est <b>automatique</b>. Ramasse les <b>unités</b> dorées, puis <b>Tab</b> pour ouvrir l\'arbre.';
+        ? 'Glisse le doigt pour <b>piloter</b>. Le tir est <b>automatique</b>. Ramasse les <b>unités</b> dorées : tu les dépenseras dans l\'<b>arbre</b>, de retour au hangar.'
+        : '<b>ZQSD</b> ou <b>flèches</b> pour piloter. Le tir est <b>automatique</b>. Ramasse les <b>unités</b> dorées : tu les dépenseras dans l\'<b>arbre</b>, de retour au hangar.';
       help.hidden = false;
       helpTimer = 11;
     }
@@ -61,8 +61,7 @@ const UI = (() => {
   }
   function closeHangar() {
     Audio8.fx.click();
-    if (Game.isFlying()) { Game.onStatsChanged(); setScreen(hangarFrom === 'pause' ? 'pause' : 'fly'); }
-    else if (hangarFrom === 'over') setScreen('over');
+    if (hangarFrom === 'over') setScreen('over');
     else if (hangarFrom === 'lobby' && Coop.role) setScreen('lobby');
     else setScreen('title');
   }
@@ -111,10 +110,6 @@ const UI = (() => {
 
     $('hudUnits').textContent = fmt(S.units);
     $('hudCores').textContent = fmt(S.cores);
-
-    const afford = affordableCount('ship');
-    $('hudAfford').hidden = afford === 0;
-    $('hudAfford').textContent = afford;
 
     $('hudBoss').hidden = !d.boss;
     if (d.boss) {
@@ -321,9 +316,7 @@ const UI = (() => {
         else if (screen === 'hangar') closeHangar();
       } else if (e.code === 'Tab') {
         e.preventDefault();
-        if (screen === 'fly') openHangar('fly');
-        else if (screen === 'pause') openHangar('pause');
-        else if (screen === 'hangar') closeHangar();
+        if (screen === 'hangar') closeHangar();
         else if (screen === 'over') openHangar('over');
       } else if (key === 'm') {
         S.set.music = !S.set.music;
@@ -368,7 +361,6 @@ const UI = (() => {
     on('btnTitleTree', () => openHangar('title'));
     on('btnTitleOptions', () => openOptions('title'));
     on('btnResume', resume);
-    on('btnPauseTree', () => openHangar('pause'));
     on('btnPauseOptions', () => openOptions('pause'));
     on('btnAbandon', () => {
       if (Coop.role === 'guest') {
@@ -396,13 +388,9 @@ const UI = (() => {
         setScreen('title');
       });
     });
-    on('btnHudTree', () => openHangar('fly'));
     on('btnHudPause', pause);
     on('btnTreeBack', closeHangar);
-    on('btnTreePlay', () => {
-      if (Game.isFlying()) { closeHangar(); return; }
-      launch();
-    });
+    on('btnTreePlay', launch);
     on('tabShip', () => Tree.setTree('ship'));
     on('tabCons', () => Tree.setTree('cons'));
     on('btnCenter', () => Tree.center());
@@ -505,7 +493,7 @@ const Tree = (() => {
   }
   function zoomBy(f, sx = (W - panelWidth()) / 2, sy = H / 2) {
     const before = toWorld(sx, sy);
-    cam.z = clamp(cam.z * f, 0.24, 2.2);
+    cam.z = clamp(cam.z * f, 0.18, 2.2);
     const after = toWorld(sx, sy);
     cam.x += before.x - after.x;
     cam.y += before.y - after.y;
@@ -564,8 +552,8 @@ const Tree = (() => {
           cv.classList.add('dragging');
         }
         if (drag.moved) {
-          cam.x = clamp(drag.camX - dx / cam.z, -1500, 1500);
-          cam.y = clamp(drag.camY - dy / cam.z, -1500, 1500);
+          cam.x = clamp(drag.camX - dx / cam.z, -1900, 1900);
+          cam.y = clamp(drag.camY - dy / cam.z, -1900, 1900);
         }
         return;
       }
@@ -638,12 +626,11 @@ const Tree = (() => {
     $('autoBuyWrap').hidden = !STATS.autoBuy;
     $('autoBuyBox').checked = !!S.autoBuy;
 
-    const flying = Game.isFlying();
-    const waitHost = !flying && Coop.role === 'guest';
+    const waitHost = Coop.role === 'guest';
     $('btnTreePlay').disabled = waitHost;
-    $('btnTreePlay').textContent = flying ? 'REPRENDRE' : waitHost ? "ATTENTE DE L'HOTE" : 'DECOLLER';
+    $('btnTreePlay').textContent = waitHost ? "ATTENTE DE L'HOTE" : 'DECOLLER';
     const maxS = maxStartSector();
-    const showPick = !flying && maxS > 1 && !waitHost;
+    const showPick = maxS > 1 && !waitHost;
     $('sectorPick').hidden = !showPick;
     if (showPick) {
       S.startSector = clamp(S.startSector, 1, maxS);
@@ -701,9 +688,12 @@ const Tree = (() => {
     if (isMaxed(n)) {
       parts.push('<div class="np-max">MAXIMUM ATTEINT</div>');
     } else if (!isUnlocked(n)) {
+      if (n.asc && S.ascensions < n.asc) {
+        parts.push(`<div class="np-req">Requiert : ${n.asc} hypersaut${n.asc > 1 ? 's' : ''} (déjà fait${S.ascensions > 1 ? 's' : ''} : ${S.ascensions})</div>`);
+      }
       const need = n.parents.filter(p => rank(p) === 0).map(p => p.name);
       const glue = n.all ? ' et ' : ' ou ';
-      parts.push(`<div class="np-req">Requiert : ${need.join(glue)}</div>`);
+      if (need.length) parts.push(`<div class="np-req">Requiert : ${need.join(glue)}</div>`);
       const c = nodeCost(n);
       parts.push(`<div class="np-cost">${curLabel(n.cur)} ${fmt(c)}</div>`);
     } else {
@@ -774,13 +764,10 @@ const Tree = (() => {
 
   function renderHyper() {
     const gain = hyperGain();
-    const inFlightTogether = Coop.role && Game.isFlying();
-    const ready = hyperReady() && !inFlightTogether;
-    const txt = inFlightTogether
-      ? "Impossible pendant un vol à deux : attends la fin de la partie."
-      : ready
+    const ready = hyperReady();
+    const txt = ready
       ? `Détruis tout l'arbre (pas la Constellation) et repars du secteur 1, plus fort. Tu gagnes <b style="color:var(--dark)">✦ ${fmt(gain)}</b>.`
-      : `Vaincs le boss du secteur 10 pour l'activer. Record actuel : secteur ${S.best}.`;
+      : `Vaincs le boss du secteur ${HYPER_BOSS_SECTOR} pour l'activer. Record actuel : secteur ${S.best}.`;
     return `<div class="hyper-card"><h3>HYPERSAUT</h3><p>${txt}</p><button id="npHyper" class="btn ${ready ? 'primary' : ''} small" ${ready ? '' : 'disabled'}>LANCER L'HYPERSAUT</button></div>`;
   }
 
@@ -814,8 +801,6 @@ const Tree = (() => {
     const hyp = $('npHyper');
     if (hyp) {
       hyp.onclick = () => UI.confirmBox('HYPERSAUT ?', `Tes unités, tes noyaux et tout l'arbre seront remis à zéro. La Constellation reste. Tu gagnes ✦ ${fmt(hyperGain())}.`, 'SAUTER', () => {
-        const flying = Game.isFlying();
-        if (flying) Game.clearAll();
         const gain = doHyper();
         Audio8.init();
         Audio8.fx.hyper();
@@ -976,6 +961,45 @@ const Tree = (() => {
     ctx.drawImage(spr, Math.round(c.x - (spr.width * k) / 2), Math.round(c.y - (spr.height * k) / 2), spr.width * k, spr.height * k);
   }
 
+  /* Les cercles qui marquent où commence l'arbre profond. */
+  const DEPTH_RINGS = [
+    { radius: 1018, asc: 1, text: 'APRÈS 1 HYPERSAUT' },
+    { radius: 1262, asc: 2, text: 'APRÈS 2 HYPERSAUTS' },
+  ];
+  function drawDepthRings() {
+    if (tree !== 'ship') return;
+    const c = toScreen(0, 0);
+    for (const ring of DEPTH_RINGS) {
+      if (S.ascensions >= ring.asc) continue;
+      ctx.setLineDash([10, 10]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(154,168,255,0.45)';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, ring.radius * cam.z, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  /* Le texte passe après les cases, pour rester lisible. */
+  function drawDepthLabels() {
+    if (tree !== 'ship') return;
+    const c = toScreen(0, 0);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${Math.max(13, Math.round(24 * cam.z))}px VT323, monospace`;
+    for (const ring of DEPTH_RINGS) {
+      if (S.ascensions >= ring.asc) continue;
+      // En haut à droite du cercle, à l'écart des branches.
+      const a = (-67.5 * Math.PI) / 180 + 0.2;
+      const x = c.x + Math.cos(a) * ring.radius * cam.z, y = c.y + Math.sin(a) * ring.radius * cam.z;
+      const w = ctx.measureText(ring.text).width + 10;
+      ctx.fillStyle = '#05060f';
+      ctx.fillRect(x - w / 2, y - 11, w, 22);
+      ctx.fillStyle = '#9aa8ff';
+      ctx.fillText(ring.text, x, y);
+    }
+  }
+
   function drawLabels() {
     const list = tree === 'ship' ? BRANCHES : CONS_BRANCHES;
     const reach = tree === 'ship' ? 158 : 118; // entre le vaisseau et la première case de chaque branche
@@ -1009,10 +1033,12 @@ const Tree = (() => {
       ctx.fillRect(x, y, s.s, s.s);
     }
 
+    drawDepthRings();
     drawLines();
     drawCenter();
     for (const n of NODES) if (n.tree === tree) drawNode(n);
     drawLabels();
+    drawDepthLabels();
 
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
@@ -1068,7 +1094,7 @@ const Tree = (() => {
       S.lifeUnits += g;
       S.ascUnits += g;
     }
-    const n = autoBuyTick();
+    const n = Game.isFlying() ? 0 : autoBuyTick();
     if (n > 0) Game.onStatsChanged();
   }, 1000);
 
@@ -1089,8 +1115,8 @@ const Tree = (() => {
     Coop.tick(dt);
   }
   function frame(now) {
+    requestAnimationFrame(frame); // d'abord : une erreur ponctuelle ne doit pas figer tout le jeu
     advance(now);
-    requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 

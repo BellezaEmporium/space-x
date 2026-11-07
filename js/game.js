@@ -26,6 +26,11 @@ const NEBULA_PAL = [
   ['#07141b', '#0a1c26'],
 ];
 
+const BOSS_BUFF_SECTOR = 5;  // à partir d'ici : 3 fois plus de vie, attaques 2 fois plus rapides
+const BOSS_BUFF_HP = 3;
+const BOSS_BUFF_ATTACK = 2;
+const TWO_BOSS_SECTOR = 10;  // à partir d'ici : deux boss en même temps
+
 const Game = (() => {
   let cv, ctx;
   let VW = 640, VH = 360, pixelScale = 3;
@@ -34,7 +39,7 @@ const Game = (() => {
   let run = null;
   let enemies = [], pBullets = [], eBullets = [], missiles = [], mines = [], orbs = [];
   let parts = [], rings = [], novas = [], bolts = [], texts = [], droneList = [];
-  let boss = null;
+  let bosses = [];        // un boss, puis deux à partir de TWO_BOSS_SECTOR
   let time = 0, shake = 0, frameT = 0, accumulator = 0;
   let camX = 0, camY = 0;
 
@@ -230,7 +235,7 @@ const Game = (() => {
   function clearWorld() {
     enemies = []; pBullets = []; eBullets = []; missiles = []; mines = []; orbs = [];
     parts = []; rings = []; novas = []; bolts = []; texts = [];
-    boss = null;
+    bosses = [];
     accumulator = 0;
     shake = 0;
   }
@@ -390,7 +395,7 @@ const Game = (() => {
     const prog = clamp(run.t / run.dur, 0, 1.5);
     let rate = (0.9 + 0.14 * (s - 1)) * (1 + 0.8 * prog) * st.spawnMul;
     // Boss présent : répit au début, puis la pression monte si on traîne.
-    if (boss) rate *= Math.min(1.25, 0.4 + 0.01 * Math.max(0, run.t - run.dur));
+    if (bosses.length) rate *= Math.min(1.25, 0.4 + 0.01 * Math.max(0, run.t - run.dur));
     if (inCoop()) rate *= 1.5;
     rate = Math.min(rate, 9 * st.spawnMul * (inCoop() ? 1.5 : 1));
     run.spawnAcc += rate * dt;
@@ -424,29 +429,47 @@ const Game = (() => {
       sayToast('CARGO REPÉRÉ — détruis-le avant qu\'il ne fuie !');
     }
     // Le boss.
-    if (!boss && run.t >= run.dur) spawnBoss();
+    if (!bosses.length && run.t >= run.dur) spawnBosses();
   }
 
-  function spawnBoss() {
+  function spawnBosses() {
     const s = run.sector;
-    const def = BOSSES[(s - 1) % BOSSES.length];
-    const spr = Sprites[def.sprite].n;
-    const at = spawnPos(50);
-    const hp = 300 * Math.pow(1.42, s - 1) * (inCoop() ? 1.7 : 1);
-    boss = {
-      nid: nextNid++ & 0xffff, bossIdx: (s - 1) % BOSSES.length,
-      type: 'boss', t: { sprite: def.sprite, ai: def.ai, noRot: true, dmg: 0 }, def,
-      x: at.x, y: at.y, vx: 0, vy: 0, hp, maxHp: hp,
-      r: Math.min(spr.width, spr.height) * 0.9,
-      spd: 34, dmg: 16 * dmgMul(s), rew: 60 * rewMul(s),
-      elite: false, boss: true, flash: 0, ang: 0, timer: 1.5, timer2: 0, spin: 0, state: 0, wob: 0,
-      slow: 0, slowT: 0, q: 0, dead: false, drawScale: 2, life: 0, tx: 0, ty: 0,
-    };
-    enemies.push(boss);
+    const buffed = s >= BOSS_BUFF_SECTOR;
+    const count = s >= TWO_BOSS_SECTOR ? 2 : 1;
+    const hp = 300 * Math.pow(1.42, s - 1) * (inCoop() ? 1.7 : 1) * (buffed ? BOSS_BUFF_HP : 1);
+    for (let i = 0; i < count; i++) {
+      // Deux boss différents : chacun attaque à sa façon.
+      const bossIdx = (s - 1 + i) % BOSSES.length;
+      const def = BOSSES[bossIdx];
+      const spr = Sprites[def.sprite].n;
+      const at = spawnPos(50);
+      const boss = {
+        nid: nextNid++ & 0xffff, bossIdx,
+        type: 'boss', t: { sprite: def.sprite, ai: def.ai, noRot: true, dmg: 0 }, def,
+        x: at.x, y: at.y, vx: 0, vy: 0, hp, maxHp: hp,
+        r: Math.min(spr.width, spr.height) * 0.9,
+        spd: 34, dmg: 16 * dmgMul(s), rew: 60 * rewMul(s),
+        attackRate: buffed ? BOSS_BUFF_ATTACK : 1,
+        elite: false, boss: true, flash: 0, ang: 0, timer: 1.5, timer2: 0, spin: 0, state: 0, wob: 0,
+        slow: 0, slowT: 0, q: 0, dead: false, drawScale: 2, life: 0, tx: 0, ty: 0,
+      };
+      bosses.push(boss);
+      enemies.push(boss);
+    }
     sfx('alarm');
     sayIntensity(1);
-    sayBanner('ALERTE', `${def.name} — secteur ${s}`, true);
+    sayBanner('ALERTE', bosses.map(b => b.def.name).join(' et ') + ' — secteur ' + s, true);
     shake = Math.max(shake, 5);
+  }
+
+  function nearestBoss(x, y) {
+    let best = null, bd = Infinity;
+    for (const b of bosses) {
+      if (b.dead) continue;
+      const d = (b.x - x) * (b.x - x) + (b.y - y) * (b.y - y);
+      if (d < bd) { bd = d; best = b; }
+    }
+    return best;
   }
 
   /* ---------- Tirs ennemis ---------- */
@@ -569,7 +592,8 @@ const Game = (() => {
   function bossSpiral(e, dt, nx, ny, dist) {
     bossMove(e, dt, nx, ny, dist, 120, e.spd);
     e.spin += dt * 1.5;
-    e.timer -= dt;
+    const attack = dt * e.attackRate;
+    e.timer -= attack;
     if (e.timer <= 0) {
       e.timer = 0.2;
       const arms = 2 + bossExtra();
@@ -577,7 +601,7 @@ const Game = (() => {
         fireEnemy(e.x, e.y, e.spin + (i / arms) * TAU, 84, e.dmg * 0.6, '#ff5a8a', 2);
       }
     }
-    e.timer2 -= dt;
+    e.timer2 -= attack;
     if (e.timer2 <= 0) {
       e.timer2 = 4.5;
       const a = Math.atan2(ny, nx);
@@ -586,7 +610,8 @@ const Game = (() => {
   }
   function bossBrood(e, dt, nx, ny, dist) {
     bossMove(e, dt, nx, ny, dist, 150, e.spd * 0.8);
-    e.timer -= dt;
+    const attack = dt * e.attackRate;
+    e.timer -= attack;
     if (e.timer <= 0 && enemies.length < 230) {
       e.timer = 2.8;
       for (let i = 0; i < 5 + bossExtra(); i++) {
@@ -594,7 +619,7 @@ const Game = (() => {
         spawnEnemy(i % 3 === 2 ? 'scout' : 'gnat', { x: e.x + Math.cos(a) * e.r, y: e.y + Math.sin(a) * e.r }, { noElite: true });
       }
     }
-    e.timer2 -= dt;
+    e.timer2 -= attack;
     if (e.timer2 <= 0) {
       e.timer2 = 1.7;
       const a = Math.atan2(ny, nx);
@@ -603,7 +628,8 @@ const Game = (() => {
     }
   }
   function bossRam(e, dt, nx, ny, dist) {
-    e.timer -= dt;
+    // La charge garde sa longueur : c'est l'attente entre deux charges qui raccourcit.
+    e.timer -= e.state === 2 ? dt : dt * e.attackRate;
     if (e.state === 0) {            // traque
       bossMove(e, dt, nx, ny, dist, 60, e.spd * 1.1);
       if (e.timer <= 0) { e.state = 1; e.timer = 0.9; e.cx = nx; e.cy = ny; }
@@ -626,9 +652,10 @@ const Game = (() => {
     }
   }
   function bossBlink(e, dt, nx, ny, dist) {
-    e.timer -= dt;
+    const attack = dt * e.attackRate;
+    e.timer -= attack;
     e.spin += dt * 0.9;
-    e.timer2 -= dt;
+    e.timer2 -= attack;
     if (e.timer2 <= 0) {
       e.timer2 = 0.14;
       const arms = 2 + bossExtra();
@@ -763,7 +790,7 @@ const Game = (() => {
 
   function onBossKilled(e) {
     const st = ST;
-    boss = null;
+    bosses = bosses.filter(b => b !== e);
     run.bossesKilled++;
     const coreN = Math.max(1, Math.round((1 + Math.floor(run.sector / 2) + st.coreBoss) * st.coreMul));
     const spread = Math.min(coreN, 8);
@@ -778,6 +805,10 @@ const Game = (() => {
     shake = Math.max(shake, 8);
     if (mode === 'host') Coop.queue(['k', 8]);
     sfx('bigKill');
+    if (bosses.length) {
+      sayToast('Boss détruit : il en reste un !');
+      return;
+    }
     sfx('sector');
     sayIntensity(0);
 
@@ -937,7 +968,7 @@ const Game = (() => {
       const src = i >= st.missileN && droneList[i - st.missileN] ? droneList[i - st.missileN] : p;
       missiles.push({
         x: src.x, y: src.y, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60,
-        o: p.idx, ang: a, target: boss && !boss.dead && i % 2 === 0 ? boss : null, life: 3.2, trail: 0,
+        o: p.idx, ang: a, target: bosses.length && i % 2 === 0 ? bosses[(i / 2) % bosses.length] : null, life: 3.2, trail: 0,
       });
       launched++;
     }
@@ -1255,9 +1286,10 @@ const Game = (() => {
 
     // Le boss passe en priorité, sauf si un ennemi est sur le point de nous toucher.
     let target = nearest(p.x, p.y, st.range * 1.05);
-    if (boss && !boss.dead && Math.hypot(boss.x - p.x, boss.y - p.y) < st.range * 1.05 + boss.r) {
+    const closeBoss = nearestBoss(p.x, p.y);
+    if (closeBoss && Math.hypot(closeBoss.x - p.x, closeBoss.y - p.y) < st.range * 1.05 + closeBoss.r) {
       const close = target && Math.hypot(target.x - p.x, target.y - p.y) < 42;
-      if (!close) target = boss;
+      if (!close) target = closeBoss;
     }
     let wantAim = p.aim;
     let shouldFire = false;
@@ -1616,6 +1648,8 @@ const Game = (() => {
             ringAt(s.x, s.y, 14, '#7ff0ff');
           } else {
             hurtPlayer(b.dmg, 'bullet');
+            // Une capsule de secours efface tous les tirs : il ne reste rien à parcourir.
+            if (!eBullets.length) return;
           }
           dead = true;
           break;
@@ -2008,7 +2042,11 @@ const Game = (() => {
       hull: Math.max(0, me.hull), maxHull: st.maxHull,
       shield: me.shield, maxShield: st.shield ? st.maxHull * st.shieldMul : 0,
       sector: run.sector, prog: clamp(run.t / run.dur, 0, 1),
-      boss: boss ? { name: boss.def.name, hp: boss.hp, maxHp: boss.maxHp } : null,
+      boss: bosses.length ? {
+        name: bosses.map(b => b.def.name).join(' + '),
+        hp: bosses.reduce((sum, b) => sum + Math.max(0, b.hp), 0),
+        maxHp: bosses.reduce((sum, b) => sum + b.maxHp, 0) + (bosses.length === 1 && run.sector >= TWO_BOSS_SECTOR ? bosses[0].maxHp : 0),
+      } : null,
       combo: run.combo, comboBonus: st.combo ? Math.min(st.comboMax, run.combo * 0.01) : 0,
       frenzy: Math.floor(me.frenzy),
       dash: st.dash, charges: me.charges, dashMax: st.dashCharges,
@@ -2059,7 +2097,7 @@ const Game = (() => {
 
   function queueDash() { Input.dashQueued = true; }
   function clearAll() {
-    p = null; me = null; run = null; boss = null; players = []; mode = 'solo'; droneList = [];
+    p = null; me = null; run = null; bosses = []; players = []; mode = 'solo'; droneList = [];
     enemies = []; pBullets = []; eBullets = []; missiles = []; mines = []; orbs = [];
     parts = []; rings = []; novas = []; bolts = []; texts = [];
     updateView();
@@ -2075,11 +2113,11 @@ const Game = (() => {
   return {
     init, start, startGuest, guestEnd, frame, step, draw, hudData, isFlying, onStatsChanged, setMateStats, removeMate,
     queueDash, abandon, clearAll, updateView, resize, Input, moveVector,
-    get debug() { return { p: me, run, enemies, boss, orbs, pBullets, eBullets, VW, VH, pixelScale, players, mode }; },
+    get debug() { return { p: me, run, enemies, boss: bosses[0] || null, bosses, orbs, pBullets, eBullets, VW, VH, pixelScale, players, mode }; },
     /* Accès réservé à la synchronisation en ligne (coop.js). */
     net: {
-      get players() { return players; }, get me() { return me; }, get run() { return run; }, get boss() { return boss; },
-      set boss(b) { boss = b; },
+      get players() { return players; }, get me() { return me; }, get run() { return run; }, get bosses() { return bosses; },
+      set bosses(list) { bosses = list; },
       get enemies() { return enemies; }, get pBullets() { return pBullets; }, get eBullets() { return eBullets; },
       get missiles() { return missiles; }, get mines() { return mines; }, get orbs() { return orbs; }, get novas() { return novas; },
       get VW() { return VW; }, get VH() { return VH; }, get camX() { return camX; }, get camY() { return camY; },
