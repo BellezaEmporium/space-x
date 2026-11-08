@@ -67,8 +67,10 @@
         <button id="btnPlay" class="btn primary">DECOLLER</button>
         <button id="btnTitleCoop" class="btn">JOUER A DEUX EN LIGNE</button>
         <button id="btnTitleTree" class="btn">ARBRE DE COMPETENCES</button>
+        <button id="btnTitleSaves" class="btn">SAUVEGARDES</button>
         <button id="btnTitleOptions" class="btn">OPTIONS</button>
       </div>
+      <p id="titleProfile" class="title-profile"></p>
       <p id="titleStats" class="muted"></p>
       <p class="muted controls">ZQSD / Flèches : piloter &nbsp;·&nbsp; Le tir est automatique &nbsp;·&nbsp; L'arbre s'améliore au hangar, entre deux vols &nbsp;·&nbsp; Échap : pause</p>
     </div>
@@ -142,6 +144,22 @@
     </div>
   </section>
 
+  <!-- ===== Sauvegardes ===== -->
+  <section id="saves" class="screen dim" hidden>
+    <div class="panel-box wide">
+      <h2>SAUVEGARDES</h2>
+      <p class="muted">Une partie par coéquipier, pour toujours jouer au même niveau.</p>
+      <div id="savesList" class="saves-list"></div>
+      <div class="new-save">
+        <input id="newSaveName" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="Nom de la nouvelle partie" />
+        <button id="btnNewSave" class="btn primary small">CREER</button>
+      </div>
+      <div class="menu">
+        <button id="btnSavesBack" class="btn">RETOUR</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ===== Options ===== -->
   <section id="options" class="screen dim" hidden>
     <div class="panel-box">
@@ -149,7 +167,7 @@
       <div id="optionsList" class="options"></div>
       <div class="menu">
         <button id="btnOptionsBack" class="btn primary">RETOUR</button>
-        <button id="btnWipe" class="btn danger">EFFACER LA SAUVEGARDE</button>
+        <button id="btnWipe" class="btn danger">REMETTRE CETTE PARTIE A ZERO</button>
       </div>
     </div>
   </section>

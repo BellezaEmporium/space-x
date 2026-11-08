@@ -24,7 +24,7 @@ Dans l'arbre, à la souris : clic pour acheter, Maj+clic pour acheter au maximum
 Depuis le menu, choisissez **Jouer à deux en ligne** : l'un crée la partie, l'autre entre le code à 4 caractères ou ouvre le lien copié. Chacun joue sur son appareil et garde sa propre progression.
 
 - Les ennemis sont plus nombreux et plus résistants, et chaque orbe ramassé profite aux deux joueurs.
-- Un vaisseau détruit reste à terre : son coéquipier le répare en restant près de lui 3 secondes, sinon il revient au secteur suivant. Le vol s'arrête quand les deux sont à terre.
+- Un vaisseau détruit reste à terre : son coéquipier le répare en restant dans son cercle 3 secondes, puis 6, 12, 24… pour les réparations suivantes du même vol. Sinon, il revient au secteur suivant. Le vol s'arrête quand les deux sont à terre.
 - Ouvrir le menu pause arrête la partie pour les deux.
 
 La liaison est directe entre les deux appareils. Le service gratuit [PeerJS](https://peerjs.com) sert à vous mettre en relation, et ses serveurs relaient les échanges si la liaison directe est impossible : chaque appareil voit donc l'adresse IP de l'autre ou celle du relais, et certains réseaux peuvent bloquer la connexion.
@@ -38,7 +38,7 @@ La liaison est directe entre les deux appareils. Le service gratuit [PeerJS](htt
 - **Arbre :** 226 compétences réparties en 8 branches (Armement, Missiles, Énergie, Drones, Blindage, Propulsion, Collecte, Tactique), avec des synergies entre branches voisines. Les plus lointaines n'ouvrent qu'après 1 ou 2 hypersauts.
 - **Hypersaut :** après le boss du secteur 3, on peut remettre l'arbre à zéro contre de la matière noire. Elle se dépense dans la Constellation, 57 compétences permanentes.
 
-La progression est enregistrée dans le navigateur.
+La progression est enregistrée dans le navigateur, avec autant de sauvegardes nommées que l'on veut (menu **Sauvegardes**) : pratique pour garder une partie par coéquipier.
 
 ## Technique
 

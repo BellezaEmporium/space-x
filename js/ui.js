@@ -20,6 +20,7 @@ const UI = (() => {
     show('pause', name === 'pause');
     show('over', name === 'over');
     show('lobby', name === 'lobby');
+    show('saves', name === 'saves');
     show('hangar', name === 'hangar');
     Coop.setLocalPause(Game.isFlying() && name !== 'fly');
     show('dashBtn', name === 'fly' && isTouch() && STATS.dash);
@@ -97,8 +98,15 @@ const UI = (() => {
     let coopText = '';
     if (Coop.role) {
       if (Coop.blocked() || (Coop.role === 'guest' && Coop.remotePaused)) coopText = 'PAUSE : ton coéquipier est dans un menu';
-      else if (d.dead) coopText = d.rescue > 0 ? 'Réparation en cours…' : "À terre : ton coéquipier doit s'approcher pour te réparer";
-      else if (d.mate && d.mate.dead) coopText = d.mate.rescue > 0 ? 'Réparation en cours, reste près de lui…' : 'Coéquipier à terre : va le rejoindre (flèche verte)';
+      else if (d.dead) {
+        coopText = d.rescue > 0
+          ? `Réparation : ${Math.floor(d.rescue * 100)} %`
+          : `À terre : ton coéquipier doit rester ${d.rescueNeed} s près de toi`;
+      } else if (d.mate && d.mate.dead) {
+        coopText = d.mate.rescue > 0
+          ? `Réparation : ${Math.floor(d.mate.rescue * 100)} % — reste dans le cercle`
+          : `Coéquipier à terre : reste ${d.mate.rescueNeed} s dans son cercle (flèche verte)`;
+      }
     }
     $('coopStatus').hidden = !coopText;
     $('coopStatus').textContent = coopText;
@@ -239,6 +247,112 @@ const UI = (() => {
     if (!S.set.sound && !S.set.music) parts.push('SON COUPÉ : touche M ou Options');
     $('titleStats').textContent = parts.join('  ·  ');
     $('btnPlay').textContent = S.runs > 0 ? 'REDECOLLER' : 'DECOLLER';
+    $('titleProfile').textContent = `Partie : ${Save.activeName()}`;
+  }
+
+  /* ---------- Sauvegardes ---------- */
+  let renaming = null;
+  function timeAgo(ms) {
+    const min = Math.floor((Date.now() - ms) / 60000);
+    if (min < 1) return "à l'instant";
+    if (min < 60) return `il y a ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `il y a ${h} h`;
+    return `il y a ${Math.floor(h / 24)} j`;
+  }
+  /* Les champs texte gardent leurs touches : M, P ou Entrée ne doivent pas agir sur le jeu. */
+  function keepKeys(input, onEnter) {
+    input.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.code === 'Enter' || e.code === 'NumpadEnter') onEnter();
+      if (e.code === 'Escape') { renaming = null; renderSaves(); }
+    });
+  }
+  function renderSaves() {
+    const box = $('savesList');
+    box.innerHTML = '';
+    for (const p of Save.list()) {
+      const row = document.createElement('div');
+      row.className = 'save-row' + (p.active ? ' active' : '');
+      const info = document.createElement('div');
+      info.className = 'save-info';
+      if (renaming === p.id) {
+        const input = document.createElement('input');
+        input.maxLength = 24;
+        input.value = p.name;
+        const confirm = () => { Save.rename(p.id, input.value); renaming = null; renderSaves(); refreshTitle(); };
+        keepKeys(input, confirm);
+        info.appendChild(input);
+        setTimeout(() => input.focus(), 0);
+      } else {
+        const name = document.createElement('div');
+        name.className = 'save-name';
+        name.textContent = p.name;
+        if (p.active) {
+          const tag = document.createElement('span');
+          tag.className = 'tag';
+          tag.textContent = 'EN COURS';
+          name.appendChild(tag);
+        }
+        const meta = document.createElement('div');
+        meta.className = 'save-meta';
+        meta.textContent = p.runs
+          ? `Record secteur ${p.best} · ${p.skills} compétences${p.ascensions ? ` · ${p.ascensions} hypersaut${p.ascensions > 1 ? 's' : ''}` : ''} · ${timeAgo(p.lastSeen)}`
+          : 'Nouvelle partie';
+        info.append(name, meta);
+      }
+      const actions = document.createElement('div');
+      actions.className = 'save-actions';
+      const button = (label, cls, fn) => {
+        const b = document.createElement('button');
+        b.className = `btn small ${cls}`;
+        b.textContent = label;
+        b.addEventListener('click', () => { Audio8.fx.click(); fn(); });
+        actions.appendChild(b);
+      };
+      if (renaming === p.id) {
+        button('OK', 'primary', () => { Save.rename(p.id, info.querySelector('input').value); renaming = null; renderSaves(); refreshTitle(); });
+      } else {
+        if (!p.active) button('CHOISIR', 'primary', () => chooseSave(p.id));
+        button('RENOMMER', '', () => { renaming = p.id; renderSaves(); });
+        button('SUPPRIMER', 'danger', () => {
+          confirmBox('SUPPRIMER ?', `La partie « ${p.name} » sera effacée définitivement.`, 'SUPPRIMER', () => {
+            Save.remove(p.id);
+            afterSaveChange();
+            renderSaves();
+          });
+        });
+      }
+      row.append(info, actions);
+      box.appendChild(row);
+    }
+  }
+  function afterSaveChange() {
+    computeStats();
+    Game.clearAll();
+    applySettings();
+    const away = claimOffline();
+    if (away >= 1) toast(`Pendant ton absence : +${fmt(away)} unités`);
+    Save.write();
+    Tree.refreshTop(true);
+    refreshTitle();
+  }
+  function chooseSave(id) {
+    Save.switchTo(id);
+    afterSaveChange();
+    toast(`Partie « ${Save.activeName()} » chargée`);
+    setScreen('title');
+  }
+  function createSave() {
+    const id = Save.create($('newSaveName').value);
+    $('newSaveName').value = '';
+    chooseSave(id);
+  }
+  function openSaves() {
+    if (Coop.role) { toast('Quitte la partie à deux avant de changer de sauvegarde'); return; }
+    renaming = null;
+    renderSaves();
+    setScreen('saves');
   }
 
   function drawTitleShip() {
@@ -350,6 +464,7 @@ const UI = (() => {
       if (!$('dialog').hidden) { if (e.code === 'Escape') show('dialog', false); return; }
       if (!$('options').hidden) { if (e.code === 'Escape') show('options', false); return; }
       const key = e.key.toLowerCase();
+      if (e.code === 'Escape' && screen === 'saves') { setScreen('title'); return; }
       if (e.code === 'Escape' || key === 'p') {
         if (screen === 'fly') pause();
         else if (screen === 'pause') resume();
@@ -401,6 +516,10 @@ const UI = (() => {
     Coop.onChange = renderLobby;
     on('btnTitleTree', () => openHangar('title'));
     on('btnTitleOptions', () => openOptions('title'));
+    on('btnTitleSaves', openSaves);
+    on('btnSavesBack', () => setScreen('title'));
+    on('btnNewSave', createSave);
+    keepKeys($('newSaveName'), createSave);
     on('btnResume', resume);
     on('btnPauseOptions', () => openOptions('pause'));
     on('btnAbandon', () => {
@@ -419,7 +538,7 @@ const UI = (() => {
     on('btnOverPlay', launch);
     on('btnOptionsBack', () => show('options', false));
     on('btnWipe', () => {
-      confirmBox('TOUT EFFACER ?', 'Unités, noyaux, matière noire, arbre : tout disparaîtra définitivement.', 'EFFACER', () => {
+      confirmBox('REMETTRE A ZERO ?', `La partie « ${Save.activeName()} » repart de zéro : unités, noyaux, matière noire et arbre disparaissent. Les autres sauvegardes ne bougent pas.`, 'EFFACER', () => {
         if (Coop.role) Coop.leave();
         Save.wipe();
         computeStats();

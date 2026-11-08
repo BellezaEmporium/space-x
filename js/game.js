@@ -68,6 +68,8 @@ const Game = (() => {
     return list.length ? pick(list) : players[0];
   }
   const inCoop = () => players.length > 1;
+  const RESCUE_BASE = 3;      // secondes pour la première réparation d'un allié
+  const RESCUE_RADIUS = 70;   // distance à laquelle il faut rester
 
   /* Ce que l'hôte fait voir et entendre à l'invité. */
   const NOT_FORWARDED = new Set(['shoot', 'hit', 'hurt', 'shieldHit', 'dash', 'buy', 'deny', 'click']);
@@ -231,7 +233,7 @@ const Game = (() => {
       fireT: 0, missileT: 1, mineT: 1, arcT: 0.5, novaT: 2, beamT: 0, trailT: 0,
       dashT: 0, dashCd: 0, charges: st.dashCharges, dashVX: 0, dashVY: 0, dashHit: null, netDash: false,
       revives: st.revive, frenzy: 0, frenzyT: 0, collectT: 0,
-      dead: false, thrust: 0, maxHullSeen: st.maxHull, rescue: 0,
+      dead: false, thrust: 0, maxHullSeen: st.maxHull, rescue: 0, rescues: 0, rescueNeed: RESCUE_BASE,
       netAim: null, fired: false, award: { u: 0, c: 0 },
     };
   }
@@ -1429,24 +1431,29 @@ const Game = (() => {
     }
   }
 
-  /* Un vaisseau tombé revient quand son coéquipier reste près de lui, ou au secteur suivant. */
-  function reviveShip(s, frac) {
+  /* Un vaisseau tombé revient quand son coéquipier reste près de lui, ou au secteur suivant.
+     Chaque réparation pendant un même vol prend deux fois plus de temps : 3 s, 6 s, 12 s… */
+  function reviveShip(s, frac, byAlly) {
     s.dead = false;
     s.hull = s.st.maxHull * frac;
     s.invuln = 2;
     s.rescue = 0;
+    if (byAlly) {
+      s.rescues++;
+      s.rescueNeed = RESCUE_BASE * Math.pow(2, s.rescues);
+    }
     ringAt(s.x, s.y, 60, '#6cf06c');
-    sayToast('Vaisseau réparé !');
+    sayToast(byAlly ? `Vaisseau réparé ! La prochaine réparation prendra ${s.rescueNeed} s` : 'Vaisseau réparé !');
   }
-  const RESCUE_TIME = 3;
   function updateRescue(dt) {
     if (!inCoop()) return;
     for (const s of players) {
       if (!s.dead) continue;
       const ally = nearestAlive(s.x, s.y);
-      const close = !ally.dead && Math.hypot(ally.x - s.x, ally.y - s.y) < 50;
-      s.rescue = close ? s.rescue + dt : Math.max(0, s.rescue - dt);
-      if (s.rescue >= RESCUE_TIME) reviveShip(s, 0.4);
+      const close = !ally.dead && Math.hypot(ally.x - s.x, ally.y - s.y) < RESCUE_RADIUS;
+      // S'éloigner un instant ne fait pas tout perdre : la jauge redescend lentement.
+      s.rescue = close ? s.rescue + dt : Math.max(0, s.rescue - dt * 0.5);
+      if (s.rescue >= s.rescueNeed) reviveShip(s, 0.4, true);
     }
   }
 
@@ -1946,8 +1953,17 @@ const Game = (() => {
     if (s.dead) {
       // Épave clignotante, avec la jauge de réparation autour.
       if (Math.floor(time * 4) % 2 === 0) drawSprite((s.idx === 1 ? Sprites.ship2 : Sprites.ship).e, s.x, s.y, s.ang + Math.PI / 2);
-      pxCircle(s.x - camX, s.y - camY, 50, '#30304a', 5);
-      if (s.rescue > 0) pxCircle(s.x - camX, s.y - camY, 16, '#6cf06c', 3 - Math.floor((s.rescue / 3) * 2.5));
+      // Zone de réparation, et sa jauge qui se remplit.
+      pxCircle(s.x - camX, s.y - camY, RESCUE_RADIUS, '#30304a', 5);
+      const frac = clamp(s.rescue / s.rescueNeed, 0, 1);
+      if (frac > 0) {
+        const n = Math.floor(frac * 36);
+        ctx.fillStyle = '#6cf06c';
+        for (let i = 0; i < n; i++) {
+          const a = -Math.PI / 2 + (i / 36) * TAU;
+          ctx.fillRect(Math.round(s.x - camX + Math.cos(a) * 18), Math.round(s.y - camY + Math.sin(a) * 18), 2, 2);
+        }
+      }
       return;
     }
     // Bouclier
@@ -2059,8 +2075,9 @@ const Game = (() => {
       kills: run.kills, time: run.time, revives: me.revives,
       lowHull: !me.dead && me.hull < st.maxHull * 0.3,
       dead: me.dead,
-      mate: mate ? { hull: Math.max(0, mate.hull), maxHull: mate.st.maxHull, dead: mate.dead, rescue: mate.rescue } : null,
-      rescue: me.rescue,
+      mate: mate ? { hull: Math.max(0, mate.hull), maxHull: mate.st.maxHull, dead: mate.dead, rescue: mate.rescue / mate.rescueNeed, rescueNeed: mate.rescueNeed } : null,
+      rescue: me.rescue / me.rescueNeed,
+      rescueNeed: me.rescueNeed,
     };
   }
 

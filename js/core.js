@@ -29,8 +29,15 @@ function fmtTime(sec) {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-/* ---------- Sauvegarde ---------- */
+/* ---------- Sauvegardes ----------
+   Plusieurs parties nommées. La première garde l'ancienne clé, pour ne rien perdre.
+   Les réglages (son, visée…) sont communs à toutes les parties. */
 const SAVE_KEY = 'spacex.save.v1';
+const PROFILES_KEY = 'spacex.profiles.v1';
+const SETTINGS_KEY = 'spacex.settings.v1';
+const MAIN_PROFILE = 'main';
+const saveKeyOf = id => (id === MAIN_PROFILE ? SAVE_KEY : `${SAVE_KEY}:${id}`);
+const defaultSettings = () => ({ sound: true, music: true, musicVol: 100, sfxVol: 100, aim: 'auto', shake: true, crt: true, nums: true });
 const defaultSave = () => ({
   v: 1,
   units: 0, cores: 0, dm: 0,
@@ -44,37 +51,98 @@ const defaultSave = () => ({
   autoBuy: false,
   seenHelp: false,
   lastSeen: Date.now(),
-  set: { sound: true, music: true, musicVol: 100, sfxVol: 100, aim: 'auto', shake: true, crt: true, nums: true },
+  set: defaultSettings(),
 });
 
 let S = defaultSave();
 
+function readJSON(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+function writeJSON(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (err) { console.warn('Sauvegarde impossible.', err); }
+}
+const cleanName = (name, fallback) => (String(name || '').replace(/\s+/g, ' ').trim().slice(0, 24) || fallback);
+
 const Save = {
+  index: { active: MAIN_PROFILE, list: [{ id: MAIN_PROFILE, name: 'Ma partie', created: Date.now() }] },
+  settings: defaultSettings(),
+
   load() {
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        const def = defaultSave();
-        S = Object.assign(def, data);
-        S.set = Object.assign(defaultSave().set, data.set || {});
-      }
-    } catch (err) {
-      console.warn('Sauvegarde illisible, nouvelle partie.', err);
-      S = defaultSave();
-    }
+    const index = readJSON(PROFILES_KEY);
+    if (index && Array.isArray(index.list) && index.list.length) this.index = index;
+    if (!this.index.list.some(p => p.id === this.index.active)) this.index.active = this.index.list[0].id;
+    const data = readJSON(saveKeyOf(this.index.active));
+    // Réglages communs : ceux enregistrés à part, sinon ceux de l'ancienne sauvegarde.
+    const settings = readJSON(SETTINGS_KEY) || (data && data.set) || {};
+    this.settings = Object.assign(defaultSettings(), settings);
+    S = Object.assign(defaultSave(), data || {});
+    S.set = this.settings;
   },
   write() {
     S.lastSeen = Date.now();
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(S));
-    } catch (err) {
-      console.warn('Sauvegarde impossible.', err);
-    }
+    writeJSON(saveKeyOf(this.index.active), S);
+    writeJSON(SETTINGS_KEY, this.settings);
+    writeJSON(PROFILES_KEY, this.index);
   },
+  /* Remet à zéro la partie en cours, en gardant son nom. */
   wipe() {
     S = defaultSave();
-    try { localStorage.removeItem(SAVE_KEY); } catch (err) { /* navigation privée */ }
+    S.set = this.settings;
+    try { localStorage.removeItem(saveKeyOf(this.index.active)); } catch (err) { /* navigation privée */ }
+  },
+
+  activeId() { return this.index.active; },
+  activeName() {
+    const p = this.index.list.find(x => x.id === this.index.active);
+    return p ? p.name : 'Ma partie';
+  },
+  /* Chaque partie avec un résumé lu dans sa sauvegarde. */
+  list() {
+    return this.index.list.map(p => {
+      const data = p.id === this.index.active ? S : readJSON(saveKeyOf(p.id)) || {};
+      const ranks = data.ranks || {};
+      return {
+        id: p.id, name: p.name, active: p.id === this.index.active,
+        best: data.bestEver || 1, ascensions: data.ascensions || 0, runs: data.runs || 0,
+        skills: Object.keys(ranks).filter(k => ranks[k] > 0).length,
+        lastSeen: data.lastSeen || p.created,
+      };
+    });
+  },
+  create(name) {
+    const id = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36);
+    this.index.list.push({ id, name: cleanName(name, `Partie ${this.index.list.length + 1}`), created: Date.now() });
+    return id;
+  },
+  rename(id, name) {
+    const p = this.index.list.find(x => x.id === id);
+    if (p) p.name = cleanName(name, p.name);
+    this.write();
+  },
+  switchTo(id) {
+    if (!this.index.list.some(p => p.id === id)) return;
+    this.write();                 // on range la partie en cours
+    this.index.active = id;
+    writeJSON(PROFILES_KEY, this.index);
+    this.load();
+  },
+  remove(id) {
+    try { localStorage.removeItem(saveKeyOf(id)); } catch (err) { /* navigation privée */ }
+    this.index.list = this.index.list.filter(p => p.id !== id);
+    if (!this.index.list.length) this.create('Ma partie'); // il reste toujours au moins une partie
+    if (this.index.active === id) {
+      this.index.active = this.index.list[0].id;
+      writeJSON(PROFILES_KEY, this.index);
+      this.load();
+    } else {
+      writeJSON(PROFILES_KEY, this.index);
+    }
   },
 };
 

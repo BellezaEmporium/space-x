@@ -11,7 +11,7 @@
    PeerJS ne sert qu'à se trouver grâce au code de partie.
    ===================================================================== */
 const Coop = (() => {
-  const PROTOCOL = 3;
+  const PROTOCOL = 4;
   const PREFIX = 'spacex-coop-v1-';
   const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const CODE_LENGTH = 4;
@@ -342,7 +342,8 @@ const Coop = (() => {
       w8((s.dead ? 1 : 0) | (s.invuln > 0 ? 2 : 0) | (s.flash > 0 ? 4 : 0) | (s.thrust ? 8 : 0)
         | (s.beam ? 16 : 0) | (s.dashT > 0 ? 32 : 0) | (s.fired ? 64 : 0) | (s.shieldT > 3 ? 128 : 0));
       s.fired = false;
-      w8(Math.round(clamp(s.rescue / 3, 0, 1) * 255));
+      w8(Math.round(clamp(s.rescue / s.rescueNeed, 0, 1) * 255));
+      w8(Math.min(255, s.rescueNeed));
       if (s.beam) { wa(s.beam.a); w16(s.beam.len); w8(s.beam.w); }
       else { w8(0); w16(0); w8(0); }
       const patches = s.patches.slice(-24);
@@ -555,7 +556,9 @@ const Coop = (() => {
       s.invuln = flags & 2 ? 1 : 0;
       s.flash = flags & 4 ? 0.1 : 0;
       s.shieldT = flags & 128 ? 4 : 0;
-      s.rescue = (r8() / 255) * 3;
+      const rescueFrac = r8() / 255;
+      s.rescueNeed = r8() || 3;
+      s.rescue = rescueFrac * s.rescueNeed;
       const beamA = ra(), beamLen = r16(), beamW = r8();
       s.beam = flags & 16 ? { a: beamA, len: beamLen, w: beamW } : null;
       const patchCount = r8();

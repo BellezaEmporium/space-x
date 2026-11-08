@@ -1,4 +1,4 @@
-const CACHE_NAME = 'space-x-v7';
+const CACHE_NAME = 'space-x-v8';
 const PRECACHE_URLS = [
   './',
   './index.html',

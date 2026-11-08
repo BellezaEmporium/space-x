@@ -546,3 +546,28 @@ body.no-crt #crt { display: none; }
 /* Son */
 .btn.muted-btn { color: var(--red); }
 .sound-status { font-size: 18px !important; color: var(--muted) !important; text-align: left !important; margin: 6px 2px 0 !important; }
+
+/* ---------- Sauvegardes ---------- */
+.title-profile { color: var(--cyan); font-size: 22px; margin: 0 0 4px; }
+.saves-list { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; max-height: 46vh; overflow-y: auto; }
+.save-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--panel-2); padding: 8px 10px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.save-row.active { box-shadow: inset 0 0 0 2px var(--cyan); }
+.save-info { flex: 1 1 180px; min-width: 0; }
+.save-name { font-size: 24px; color: #fff; overflow-wrap: anywhere; }
+.save-name .tag { font-family: var(--title); font-size: 8px; color: #05060f; background: var(--cyan); padding: 3px 5px; margin-left: 6px; vertical-align: middle; }
+.save-meta { font-size: 18px; color: var(--muted); }
+.save-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.new-save { display: flex; gap: 8px; margin-bottom: 14px; }
+.new-save input, .save-row input {
+  flex: 1; min-width: 0;
+  font-family: var(--body); font-size: 22px; color: #fff;
+  background: #05060f; border: 0; padding: 6px 10px;
+  box-shadow: inset 0 0 0 2px var(--line-hi);
+  user-select: text; -webkit-user-select: text; touch-action: manipulation;
+}
+.new-save input:focus, .save-row input:focus { outline: 2px solid var(--cyan); outline-offset: 1px; }
+#saves { z-index: 30; }
