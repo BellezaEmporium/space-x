@@ -26,6 +26,7 @@ Depuis le menu, choisissez **Jouer à deux en ligne** : l'un crée la partie, l'
 - Les ennemis sont plus nombreux et plus résistants, et chaque orbe ramassé profite aux deux joueurs.
 - Un vaisseau détruit reste à terre : son coéquipier le répare en restant dans son cercle 3 secondes, puis 6, 12, 24… pour les réparations suivantes du même vol. Sinon, il revient au secteur suivant. Le vol s'arrête quand les deux sont à terre.
 - Ouvrir le menu pause arrête la partie pour les deux.
+- Pour décoller, chacun clique sur **JE SUIS PRÊT** : le vol part quand les deux le sont. C'est l'hôte qui choisit le secteur de départ.
 
 La liaison est directe entre les deux appareils. Le service gratuit [PeerJS](https://peerjs.com) sert à vous mettre en relation, et ses serveurs relaient les échanges si la liaison directe est impossible : chaque appareil voit donc l'adresse IP de l'autre ou celle du relais, et certains réseaux peuvent bloquer la connexion.
 

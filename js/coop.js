@@ -11,7 +11,7 @@
    PeerJS ne sert qu'à se trouver grâce au code de partie.
    ===================================================================== */
 const Coop = (() => {
-  const PROTOCOL = 4;
+  const PROTOCOL = 5;
   const PREFIX = 'spacex-coop-v1-';
   const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const CODE_LENGTH = 4;
@@ -41,6 +41,9 @@ const Coop = (() => {
   let snapT = 0, awardT = 0, posT = 0;
   let seq = 0, lastSeq = -1;
   let onChange = () => {};
+  let localReady = false;  // ce joueur a cliqué « prêt »
+  let mateReady = false;   // l'autre joueur aussi
+  let hostSector = 1;      // secteur de départ choisi par l'hôte (vu par l'invité)
 
   /* ---------- Salon ---------- */
   function notify(nextState, text = '') {
@@ -125,6 +128,9 @@ const Coop = (() => {
     mateInfo = null;
     localPaused = false;
     remotePaused = false;
+    localReady = false;
+    mateReady = false;
+    hostSector = 1;
     events = [];
     lastSeq = -1;
     seq = 0;
@@ -203,6 +209,7 @@ const Coop = (() => {
         mateInfo = { st: msg.st, vw: +msg.vw || 640, vh: +msg.vh || 360 };
         Game.updateView();
         notify('ready');
+        sectorChanged();
         break;
       case 'bye':
         onMateLost('Ton coéquipier a quitté la partie.');
@@ -217,7 +224,16 @@ const Coop = (() => {
       case 'pause':
         remotePaused = !!msg.on;
         break;
+      case 'ready':
+        mateReady = !!msg.on;
+        if (role === 'guest') hostSector = +msg.sector || 1;
+        if (mateReady && msg.announce) UI.toast(role === 'host' ? 'Ton coéquipier est prêt à décoller' : "L'hôte est prêt à décoller");
+        onChange();
+        tryStart();
+        break;
       case 'start':
+        localReady = false;
+        mateReady = false;
         if (role === 'guest') {
           mateInfo = { st: msg.st, vw: 0, vh: 0 };
           lastSeq = -1;
@@ -449,8 +465,25 @@ const Coop = (() => {
   }
 
   function startFlight(sector) {
+    localReady = false;
+    mateReady = false;
     Game.start(sector);
     send({ t: 'start', sector, st: STATS });
+  }
+
+  /* Prêt / pas prêt. L'hôte lance le vol dès que les deux sont prêts. */
+  function setReady(on, announce = true) {
+    if (!role || state !== 'ready' || Game.isFlying()) return;
+    localReady = on;
+    send({ t: 'ready', on, announce: announce && on, sector: role === 'host' ? validStartSector() : undefined });
+    onChange();
+    tryStart();
+  }
+  function toggleReady() { setReady(!localReady); }
+  /* L'hôte a changé de secteur de départ : l'invité doit le voir. */
+  function sectorChanged() { if (role === 'host' && state === 'ready') send({ t: 'ready', on: localReady, announce: false, sector: validStartSector() }); }
+  function tryStart() {
+    if (role === 'host' && localReady && mateReady && !Game.isFlying()) UI.startCoopFlight();
   }
 
   function sendStats() {
@@ -708,6 +741,10 @@ const Coop = (() => {
 
   return {
     host, join, leave, cleanCode, tick, queue, hostOver, startFlight, sendStats, sendView, setLocalPause,
+    toggleReady, setReady, sectorChanged,
+    get localReady() { return localReady; },
+    get mateReady() { return mateReady; },
+    get hostSector() { return hostSector; },
     guestFrame, blocked,
     mate() { return role === 'host' && state === 'ready' ? mateInfo : null; },
     get role() { return role; },

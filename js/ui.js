@@ -35,7 +35,21 @@ const UI = (() => {
     Audio8.init();
     Audio8.applySettings();
     computeStats();
-    if (Coop.role === 'guest') return; // c'est l'hôte qui lance le vol
+    // À deux, on ne part que lorsque les deux joueurs sont prêts.
+    if (Coop.role) {
+      Coop.toggleReady();
+      refreshCoopReady();
+      return;
+    }
+    beginFlight();
+  }
+
+  /* Appelé par le mode à deux quand l'hôte et l'invité sont prêts. */
+  function startCoopFlight() {
+    beginFlight();
+  }
+
+  function beginFlight() {
     const start = validStartSector();
     setScreen('fly');
     if (Coop.role === 'host') Coop.startFlight(start);
@@ -194,10 +208,33 @@ const UI = (() => {
 
   function refreshOverButtons() {
     renderOverStart();
-    const guest = Coop.role === 'guest';
-    $('btnOverPlay').disabled = guest;
-    $('btnOverPlay').textContent = guest ? "ATTENTE DE L'HOTE" : Coop.role === 'host' ? 'REDECOLLER ENSEMBLE' : 'REDECOLLER';
     $('btnOverLeave').hidden = !Coop.role;
+    refreshCoopReady();
+  }
+
+  /* Texte des boutons de départ et état de chacun, à deux. */
+  function readyButtonText(solo) {
+    if (!Coop.role || Coop.state !== 'ready') return solo;
+    return Coop.localReady ? 'ANNULER : PAS PRET' : 'JE SUIS PRET';
+  }
+  function readyInfoText() {
+    if (!Coop.role || Coop.state !== 'ready') return '';
+    const me = Coop.localReady ? 'toi : prêt ✓' : 'toi : pas encore prêt';
+    const mate = Coop.mateReady ? 'ton coéquipier : prêt ✓' : 'ton coéquipier : pas encore prêt';
+    const where = Coop.role === 'guest' ? ` · départ choisi par l'hôte : secteur ${Coop.hostSector}` : '';
+    return `Décollage quand vous êtes prêts tous les deux — ${me}, ${mate}${where}`;
+  }
+  function refreshCoopReady() {
+    $('btnOverPlay').disabled = false;
+    $('btnOverPlay').textContent = readyButtonText('REDECOLLER');
+    $('btnCoopStart').textContent = readyButtonText('DECOLLER ENSEMBLE');
+    $('btnTreePlay').disabled = false;
+    $('btnTreePlay').textContent = readyButtonText('DECOLLER');
+    const info = readyInfoText();
+    for (const id of ['overReady', 'lobbyReady', 'treeReady']) {
+      $(id).textContent = info;
+      $(id).hidden = !info;
+    }
   }
   function refreshAfterCoop() {
     refreshOverButtons();
@@ -223,10 +260,11 @@ const UI = (() => {
     let status = '';
     if (Coop.state === 'waiting') status = 'En attente de ton coéquipier…';
     else if (Coop.state === 'connecting') status = 'Connexion à la partie…';
-    else if (ready) status = hosting ? 'Coéquipier connecté. Vous pouvez décoller !' : "Connecté. L'hôte lancera le vol.";
+    else if (ready) status = hosting ? 'Coéquipier connecté.' : "Connecté. L'hôte choisit le secteur de départ.";
     $('lobbyStatus').textContent = status;
     $('lobbyError').textContent = Coop.message;
-    $('btnCoopStart').hidden = !(ready && hosting);
+    $('btnCoopStart').hidden = !ready;
+    refreshCoopReady();
     $('btnCoopTree').hidden = !ready;
     $('btnCoopBack').textContent = busy ? 'QUITTER' : 'RETOUR';
   }
@@ -513,7 +551,7 @@ const UI = (() => {
       e.stopPropagation();
       if (e.code === 'Enter') { Audio8.init(); Coop.join($('joinCode').value); }
     });
-    Coop.onChange = renderLobby;
+    Coop.onChange = () => { renderLobby(); refreshCoopReady(); };
     on('btnTitleTree', () => openHangar('title'));
     on('btnTitleOptions', () => openOptions('title'));
     on('btnTitleSaves', openSaves);
@@ -565,7 +603,7 @@ const UI = (() => {
     on('btnCenter', () => Tree.center());
     on('btnZoomIn', () => Tree.zoomBy(1.25));
     on('btnZoomOut', () => Tree.zoomBy(0.8));
-    const step = dir => { stepStartSector(dir); Tree.refreshTop(true); renderOverStart(); Save.write(); };
+    const step = dir => { stepStartSector(dir); Tree.refreshTop(true); renderOverStart(); Coop.sectorChanged(); Save.write(); };
     on('secMinus', () => step(-1));
     on('secPlus', () => step(1));
     on('overSecMinus', () => step(-1));
@@ -594,7 +632,7 @@ const UI = (() => {
   function isHangarFromFlight() { return Game.isFlying(); }
 
   return {
-    setScreen, launch, updateHud, banner, toast, hurtFlash, bumpWallet, showOver, bindKeys, bindButtons, refreshAfterCoop, handleInvite,
+    setScreen, launch, updateHud, banner, toast, hurtFlash, bumpWallet, showOver, bindKeys, bindButtons, refreshAfterCoop, handleInvite, startCoopFlight, refreshCoopReady,
     applySettings, refreshTitle, drawTitleShip, confirmBox, getScreen, isHangarFromFlight,
   };
 })();
@@ -799,8 +837,7 @@ const Tree = (() => {
     $('autoBuyBox').checked = !!S.autoBuy;
 
     const waitHost = Coop.role === 'guest';
-    $('btnTreePlay').disabled = waitHost;
-    $('btnTreePlay').textContent = waitHost ? "ATTENTE DE L'HOTE" : 'DECOLLER';
+    UI.refreshCoopReady();
     const showPick = startOptions().length > 1 && !waitHost;
     $('sectorPick').hidden = !showPick;
     if (showPick) {

@@ -571,3 +571,12 @@ body.no-crt #crt { display: none; }
 }
 .new-save input:focus, .save-row input:focus { outline: 2px solid var(--cyan); outline-offset: 1px; }
 #saves { z-index: 30; }
+
+/* Qui est prêt à décoller, à deux */
+.ready-info { color: var(--gold) !important; font-size: 20px; text-align: center; margin: 0 0 12px !important; }
+.tree-ready {
+  position: absolute; left: 12px; right: 360px; top: 70px; z-index: 2;
+  background: rgba(10, 11, 24, 0.9); padding: 4px 10px; text-align: left;
+  box-shadow: 0 0 0 2px #000, inset 0 0 0 1px var(--line-hi);
+}
+@media (max-width: 760px) { .tree-ready { right: 12px; top: 128px; } }
