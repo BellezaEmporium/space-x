@@ -39,7 +39,16 @@ La liaison est directe entre les deux appareils. Le service gratuit [PeerJS](htt
 - **Arbre :** 226 compétences réparties en 8 branches (Armement, Missiles, Énergie, Drones, Blindage, Propulsion, Collecte, Tactique), avec des synergies entre branches voisines. Les plus lointaines n'ouvrent qu'après 1 ou 2 hypersauts.
 - **Hypersaut :** après le boss du secteur 3, on peut remettre l'arbre à zéro contre de la matière noire. Elle se dépense dans la Constellation, 57 compétences permanentes.
 
-La progression est enregistrée dans le navigateur, avec autant de sauvegardes nommées que l'on veut (menu **Sauvegardes**) : pratique pour garder une partie par coéquipier.
+Autant de sauvegardes nommées que l'on veut (menu **Sauvegardes**) : pratique pour garder une partie par coéquipier.
+
+La progression est enregistrée dans le navigateur, et protégée par `save-guard.js` :
+
+- le jeu demande au navigateur de ne pas effacer ses données de lui-même (stockage persistant) ;
+- un onglet resté ouvert avec une ancienne progression ne peut plus écraser une sauvegarde plus récente : il se recharge à la place ;
+- des copies de secours sont gardées, et rendues automatiquement si la sauvegarde est abîmée ;
+- dans **Sauvegardes** ou **Options**, **Exporter un fichier** ou **Copier le code** met la progression de côté, et **Importer** la restaure, y compris sur un autre appareil.
+
+Chaque adresse a sa propre sauvegarde : le fichier ouvert par double-clic, le site en ligne et, sur iPhone, l'icône de l'écran d'accueil ne partagent pas la même. Pour passer de l'une à l'autre, exportez puis importez.
 
 ## Technique
 

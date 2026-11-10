@@ -1,9 +1,10 @@
-const CACHE_NAME = 'space-x-v9';
+const CACHE_NAME = 'space-x-v10';
 const PRECACHE_URLS = [
   './',
   './index.html',
   './style.css',
   './manifest.json',
+  './save-guard.js',
   './icon.svg',
   './icon-192.png',
   './icon-512.png',
