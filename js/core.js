@@ -450,13 +450,12 @@ function respec() {
 
 /* Revenu accumulé pendant l'absence. */
 function claimOffline() {
-  const elapsed = (Date.now() - S.lastSeen) / 1000;
-  if (elapsed < 60) return 0;
-  const cap = STATS.offlineH * 3600;
-  const gain = incomePerSec() * Math.min(elapsed, cap);
-  if (gain < 1) return 0;
-  S.units += gain;
-  S.lifeUnits += gain;
-  S.ascUnits += gain;
-  return gain;
+ const elapsed = (Date.now() - S.lastSeen) / 1000;
+ if (elapsed < 60) return 0;
+ const cap = STATS.offlineH * 3600;
+ const gain = incomePerSec() * Math.min(elapsed, cap);
+ if (gain < 1) return 0;
+ S.units += gain; S.lifeUnits += gain; S.ascUnits += gain;
+ S.lastSeen = Date.now();
+ return gain;
 }
