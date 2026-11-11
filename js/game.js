@@ -2066,7 +2066,7 @@ const Game = (() => {
       boss: bosses.length ? {
         name: bosses.map(b => b.def.name).join(' + '),
         hp: bosses.reduce((sum, b) => sum + Math.max(0, b.hp), 0),
-        maxHp: bosses.reduce((sum, b) => sum + b.maxHp, 0) + (bosses.length === 1 && run.sector >= TWO_BOSS_SECTOR ? bosses[0].maxHp : 0),
+        maxHp: bosses.reduce((sum, b) => sum + b.maxHp, 0),
       } : null,
       combo: run.combo, comboBonus: st.combo ? Math.min(st.comboMax, run.combo * 0.01) : 0,
       frenzy: Math.floor(me.frenzy),
