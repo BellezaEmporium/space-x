@@ -269,7 +269,7 @@ const Game = (() => {
       kills: 0, units: 0, cores: 0, bossesKilled: 0,
       combo: 0, comboT: 0, bestCombo: 0, over: false, deathT: 0,
     };
-    if (S.best < sector) S.best = sector;
+    noteSectorReached(sector);
     S.runs++;
     sayMusic('flight', sector);
     sayBanner('SECTEUR ' + sector, mate ? 'Tous les ennemis convergent vers vous' : 'Tous les ennemis convergent vers toi');
