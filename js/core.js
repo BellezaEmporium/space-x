@@ -11,6 +11,7 @@ const arcade = s => s.replace(/[À-ÝŒ]/g, c => (c === 'Œ' ? 'OE' : c.normaliz
 
 const SUFFIX = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
 function fmt(n) {
+  if (Number.isNaN(n)) return '—';
   if (!isFinite(n)) return '∞';
   const a = Math.abs(n);
   if (a < 1000) {
