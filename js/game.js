@@ -1568,7 +1568,7 @@ const Game = (() => {
       let dead = b.life <= 0;
       if (!dead) {
         if (st.homing && !b.shard && !b.drone) {
-          if (!b.target || b.target.dead) b.target = b.target && nearest(b.x, b.y, 80);
+          if (!b.target || b.target.dead) b.target = nearest(b.x, b.y, 80);
           if (b.target && !b.target.dead) {
             const want = Math.atan2(b.target.y - b.y, b.target.x - b.x);
             const cur = Math.atan2(b.vy, b.vx);
